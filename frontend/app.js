@@ -1,5 +1,5 @@
 // =====================================================================
-// EDIT THIS to point at your deployed backend (e.g. https://your-app.onrender.com/api)
+// EDIT THIS to point at your deployed backend (e.g. https://your-app.vercel.app/api)
 const API_BASE = 'http://localhost:4000/api';
 // =====================================================================
 
@@ -15,7 +15,10 @@ const els = {
   userName: document.getElementById('userName'),
   userRoleTag: document.getElementById('userRoleTag'),
   logoutBtn: document.getElementById('logoutBtn'),
-  tabBar: document.getElementById('tabBar'),
+  menuToggle: document.getElementById('menuToggle'),
+  sidebar: document.getElementById('sidebar'),
+  sidebarOverlay: document.getElementById('sidebarOverlay'),
+  navList: document.getElementById('navList'),
 
   addTaskForm: document.getElementById('addTaskForm'),
   addTaskMsg: document.getElementById('addTaskMsg'),
@@ -32,6 +35,32 @@ const els = {
 
   myFilterStatus: document.getElementById('my-filter-status'),
   myTasksList: document.getElementById('myTasksList'),
+
+  // employees
+  employeesTableBody: document.getElementById('employeesTableBody'),
+  openAddEmployee: document.getElementById('openAddEmployee'),
+  employeeModal: document.getElementById('employeeModal'),
+  employeeForm: document.getElementById('employeeForm'),
+  employeeFormMsg: document.getElementById('employeeFormMsg'),
+  closeEmployeeModal: document.getElementById('closeEmployeeModal'),
+  cancelEmployeeModal: document.getElementById('cancelEmployeeModal'),
+  credsModal: document.getElementById('credsModal'),
+  credsUsername: document.getElementById('credsUsername'),
+  credsPassword: document.getElementById('credsPassword'),
+  closeCredsModal: document.getElementById('closeCredsModal'),
+  closeCredsModalBtn: document.getElementById('closeCredsModalBtn'),
+
+  // sites
+  sitesTableBody: document.getElementById('sitesTableBody'),
+  openAddSite: document.getElementById('openAddSite'),
+  siteModal: document.getElementById('siteModal'),
+  siteForm: document.getElementById('siteForm'),
+  siteFormMsg: document.getElementById('siteFormMsg'),
+  closeSiteModal: document.getElementById('closeSiteModal'),
+  cancelSiteModal: document.getElementById('cancelSiteModal'),
+  siteTeamleader: document.getElementById('site-teamleader'),
+  siteCoordinator: document.getElementById('site-coordinator'),
+  siteIncharge: document.getElementById('site-incharge'),
 
   toast: document.getElementById('toast')
 };
@@ -95,6 +124,18 @@ function fmtDate(iso) {
   return d.toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function fmtDateOnly(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
 // ----------------------------- auth -----------------------------
 els.togglePassword.addEventListener('click', () => {
   const isPw = els.passwordInput.type === 'password';
@@ -139,6 +180,17 @@ function logout() {
 }
 els.logoutBtn.addEventListener('click', logout);
 
+// ----------------------------- sidebar toggle (mobile) -----------------------------
+els.menuToggle.addEventListener('click', () => {
+  els.sidebar.classList.add('open');
+  els.sidebarOverlay.hidden = false;
+});
+els.sidebarOverlay.addEventListener('click', closeSidebar);
+function closeSidebar() {
+  els.sidebar.classList.remove('open');
+  els.sidebarOverlay.hidden = true;
+}
+
 // ----------------------------- app shell -----------------------------
 async function enterApp() {
   els.loginScreen.hidden = true;
@@ -146,7 +198,7 @@ async function enterApp() {
   els.userName.textContent = state.user.full_name;
   els.userRoleTag.textContent = state.user.role;
 
-  buildTabs();
+  buildNav();
 
   if (state.user.role === 'admin') {
     await loadMasterData();
@@ -156,24 +208,43 @@ async function enterApp() {
   }
 }
 
-function buildTabs() {
-  const tabs = state.user.role === 'admin'
+function buildNav() {
+  const isAdmin = state.user.role === 'admin';
+  const taskItems = isAdmin
     ? [
-        { key: 'add', label: 'Add new task' },
-        { key: 'all', label: 'All delegated tasks' },
-        { key: 'my',  label: 'My tasks' }
+        { key: 'add', label: '➕ Add new task' },
+        { key: 'all', label: '📋 All delegated tasks' },
+        { key: 'my',  label: '✅ My tasks' }
       ]
-    : [{ key: 'my', label: 'My tasks' }];
+    : [{ key: 'my', label: '✅ My tasks' }];
 
-  els.tabBar.innerHTML = '';
-  tabs.forEach((t) => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-btn';
-    btn.textContent = t.label;
-    btn.dataset.view = t.key;
-    btn.addEventListener('click', () => switchView(t.key));
-    els.tabBar.appendChild(btn);
-  });
+  els.navList.innerHTML = '';
+
+  const taskLabel = document.createElement('div');
+  taskLabel.className = 'nav-section-label';
+  taskLabel.textContent = 'Tasks';
+  els.navList.appendChild(taskLabel);
+
+  taskItems.forEach((t) => els.navList.appendChild(makeNavButton(t.key, t.label)));
+
+  if (isAdmin) {
+    const adminLabel = document.createElement('div');
+    adminLabel.className = 'nav-section-label';
+    adminLabel.textContent = 'Administration';
+    els.navList.appendChild(adminLabel);
+
+    els.navList.appendChild(makeNavButton('employees', '👥 Manage employees'));
+    els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
+  }
+}
+
+function makeNavButton(key, label) {
+  const btn = document.createElement('button');
+  btn.className = 'nav-btn';
+  btn.textContent = label;
+  btn.dataset.view = key;
+  btn.addEventListener('click', () => { switchView(key); closeSidebar(); });
+  return btn;
 }
 
 function switchView(viewKey) {
@@ -181,12 +252,14 @@ function switchView(viewKey) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
   document.getElementById(`view-${viewKey}`).hidden = false;
 
-  document.querySelectorAll('.tab-btn').forEach((b) => {
+  document.querySelectorAll('.nav-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === viewKey);
   });
 
   if (viewKey === 'all') loadAllTasks();
   if (viewKey === 'my') loadMyTasks();
+  if (viewKey === 'employees') loadEmployees();
+  if (viewKey === 'sites') loadSites();
 }
 
 // ----------------------------- master data (admin) -----------------------------
@@ -207,6 +280,26 @@ async function loadMasterData() {
 
     fillSelect(els.filterDepartment, departments, { placeholder: 'All departments' });
     fillSelect(els.filterEmployee, employees, { placeholder: 'All employees', labelKey: 'full_name' });
+
+    fillSelect(els.siteTeamleader, employees, { placeholder: 'Select team leader', labelKey: 'full_name' });
+    fillSelect(els.siteCoordinator, employees, { placeholder: 'Select coordinator', labelKey: 'full_name' });
+    fillSelect(els.siteIncharge, employees, { placeholder: 'Select site incharge', labelKey: 'full_name' });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// Re-pulls just the master employee list (used after adding/deactivating
+// an employee, so dropdowns everywhere stay in sync).
+async function refreshEmployeeDropdowns() {
+  try {
+    const employees = await api('/master/employees');
+    state.master.employees = employees;
+    fillSelect(els.fEmployee, employees, { placeholder: 'Select employee', labelKey: 'full_name' });
+    fillSelect(els.filterEmployee, employees, { placeholder: 'All employees', labelKey: 'full_name' });
+    fillSelect(els.siteTeamleader, employees, { placeholder: 'Select team leader', labelKey: 'full_name' });
+    fillSelect(els.siteCoordinator, employees, { placeholder: 'Select coordinator', labelKey: 'full_name' });
+    fillSelect(els.siteIncharge, employees, { placeholder: 'Select site incharge', labelKey: 'full_name' });
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -377,11 +470,210 @@ async function updateStatus(taskId, status, status_note) {
   }
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
+// ===================================================================
+// MANAGE EMPLOYEES (admin only)
+// ===================================================================
+
+async function loadEmployees() {
+  els.employeesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading employees…</td></tr>`;
+  try {
+    const employees = await api('/employees');
+    renderEmployeesTable(employees);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
+
+function renderEmployeesTable(employees) {
+  if (!employees.length) {
+    els.employeesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No employees yet</td></tr>`;
+    return;
+  }
+
+  els.employeesTableBody.innerHTML = '';
+  employees.forEach((emp) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(emp.full_name)}</td>
+      <td>${escapeHtml(emp.department ?? '—')}</td>
+      <td>${escapeHtml(emp.designation ?? '—')}</td>
+      <td><span class="role-pill ${emp.role}">${emp.role}</span></td>
+      <td>${escapeHtml(emp.username)}</td>
+      <td></td>
+      <td class="row-actions"></td>
+    `;
+
+    const statusCell = tr.children[5];
+    const statusBtn = document.createElement('button');
+    statusBtn.className = `status-toggle ${emp.is_active ? 'active' : 'inactive'}`;
+    statusBtn.textContent = emp.is_active ? 'Active' : 'Inactive';
+    statusBtn.addEventListener('click', () => toggleEmployeeStatus(emp));
+    statusCell.appendChild(statusBtn);
+
+    const actionsCell = tr.children[6];
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = '🔑 Reset password';
+    resetBtn.addEventListener('click', () => resetEmployeePassword(emp));
+    actionsCell.appendChild(resetBtn);
+
+    els.employeesTableBody.appendChild(tr);
+  });
+}
+
+async function toggleEmployeeStatus(emp) {
+  try {
+    await api(`/employees/${emp.id}`, { method: 'PATCH', body: { is_active: !emp.is_active } });
+    showToast(`${emp.full_name} marked ${!emp.is_active ? 'active' : 'inactive'} ✅`, 'success');
+    loadEmployees();
+    refreshEmployeeDropdowns();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function resetEmployeePassword(emp) {
+  if (!confirm(`Reset password for ${emp.full_name}?`)) return;
+  try {
+    const { generated_password } = await api(`/employees/${emp.id}/reset-password`, { method: 'POST' });
+    els.credsUsername.textContent = emp.username;
+    els.credsPassword.textContent = generated_password;
+    els.credsModal.hidden = false;
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ---- Add employee modal ----
+els.openAddEmployee.addEventListener('click', () => {
+  els.employeeForm.reset();
+  els.employeeFormMsg.hidden = true;
+  els.employeeModal.hidden = false;
+});
+els.closeEmployeeModal.addEventListener('click', () => { els.employeeModal.hidden = true; });
+els.cancelEmployeeModal.addEventListener('click', () => { els.employeeModal.hidden = true; });
+
+els.employeeForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.employeeFormMsg.hidden = true;
+
+  const body = {
+    full_name: document.getElementById('emp-fullname').value.trim(),
+    department: document.getElementById('emp-department').value.trim(),
+    designation: document.getElementById('emp-designation').value.trim(),
+    role: document.getElementById('emp-role').value
+  };
+
+  try {
+    const created = await api('/employees', { method: 'POST', body });
+    els.employeeModal.hidden = true;
+
+    els.credsUsername.textContent = created.username;
+    els.credsPassword.textContent = created.generated_password;
+    els.credsModal.hidden = false;
+
+    loadEmployees();
+    refreshEmployeeDropdowns();
+  } catch (err) {
+    els.employeeFormMsg.textContent = err.message;
+    els.employeeFormMsg.hidden = false;
+  }
+});
+
+els.closeCredsModal.addEventListener('click', () => { els.credsModal.hidden = true; });
+els.closeCredsModalBtn.addEventListener('click', () => { els.credsModal.hidden = true; });
+
+// ===================================================================
+// MANAGE SITES (admin only)
+// ===================================================================
+
+async function loadSites() {
+  els.sitesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading sites…</td></tr>`;
+  try {
+    const sites = await api('/sites');
+    renderSitesTable(sites);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderSitesTable(sites) {
+  if (!sites.length) {
+    els.sitesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No sites yet</td></tr>`;
+    return;
+  }
+
+  els.sitesTableBody.innerHTML = '';
+  sites.forEach((site) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(site.name)}</td>
+      <td>${escapeHtml(site.client_name ?? '—')}</td>
+      <td>${escapeHtml(site.location ?? '—')}</td>
+      <td>${escapeHtml(site.project_type ?? '—')}</td>
+      <td><span class="pill pill-Pending">${escapeHtml(site.status)}</span></td>
+      <td>${escapeHtml(site.team_leader?.full_name ?? '—')}</td>
+      <td class="row-actions"></td>
+    `;
+
+    const actionsCell = tr.children[6];
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '🗑️ Delete';
+    deleteBtn.addEventListener('click', () => deleteSite(site));
+    actionsCell.appendChild(deleteBtn);
+
+    els.sitesTableBody.appendChild(tr);
+  });
+}
+
+async function deleteSite(site) {
+  if (!confirm(`Delete site "${site.name}"? This cannot be undone.`)) return;
+  try {
+    await api(`/sites/${site.id}`, { method: 'DELETE' });
+    showToast('Site deleted', 'success');
+    loadSites();
+    loadMasterData(); // project dropdown used in Add Task needs refreshing too
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ---- Add site modal ----
+els.openAddSite.addEventListener('click', () => {
+  els.siteForm.reset();
+  els.siteFormMsg.hidden = true;
+  els.siteModal.hidden = false;
+});
+els.closeSiteModal.addEventListener('click', () => { els.siteModal.hidden = true; });
+els.cancelSiteModal.addEventListener('click', () => { els.siteModal.hidden = true; });
+
+els.siteForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.siteFormMsg.hidden = true;
+
+  const body = {
+    client_name: document.getElementById('site-client').value.trim(),
+    name: document.getElementById('site-name').value.trim(),
+    project_type: document.getElementById('site-type').value,
+    location: document.getElementById('site-location').value.trim(),
+    start_date: document.getElementById('site-start').value,
+    expected_end_date: document.getElementById('site-end').value || null,
+    team_leader_id: els.siteTeamleader.value,
+    coordinator_id: els.siteCoordinator.value,
+    site_incharge_id: els.siteIncharge.value,
+    description: document.getElementById('site-description').value.trim()
+  };
+
+  try {
+    await api('/sites', { method: 'POST', body });
+    showToast('Site added ✅', 'success');
+    els.siteModal.hidden = true;
+    loadSites();
+    loadMasterData(); // refresh project dropdown for Add Task
+  } catch (err) {
+    els.siteFormMsg.textContent = err.message;
+    els.siteFormMsg.hidden = false;
+  }
+});
 
 // ----------------------------- boot -----------------------------
 if (state.token && state.user) {
