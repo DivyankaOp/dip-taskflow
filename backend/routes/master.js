@@ -1,6 +1,6 @@
 const express = require('express');
 const supabase = require('../lib/supabaseClient');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -11,6 +11,14 @@ router.get('/departments', async (req, res) => {
   const { data, error } = await supabase.from('departments').select('id, name').order('name');
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+});
+
+router.post('/departments', requireAdmin, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Department name is required' });
+  const { data, error } = await supabase.from('departments').insert({ name }).select('id, name').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
 });
 
 router.get('/projects', async (req, res) => {
@@ -25,7 +33,16 @@ router.get('/task-types', async (req, res) => {
   res.json(data);
 });
 
+router.post('/task-types', requireAdmin, async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Task type name is required' });
+  const { data, error } = await supabase.from('task_types').insert({ name }).select('id, name').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
+});
+
 // Used to populate the "Assign to" dropdown and the employee filter.
+// Only active users — matches what the frontend should offer.
 router.get('/employees', async (req, res) => {
   const { data, error } = await supabase
     .from('users')
