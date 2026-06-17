@@ -6,9 +6,11 @@ const app     = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-app.use('/api/auth',   require('./routes/auth'));
-app.use('/api/tasks',  require('./routes/tasks'));
-app.use('/api/master', require('./routes/master'));
+app.use('/api/auth',      require('./routes/auth'));
+app.use('/api/tasks',     require('./routes/tasks'));
+app.use('/api/master',    require('./routes/master'));
+app.use('/api/employees', require('./routes/employees'));
+app.use('/api/sites',     require('./routes/sites'));
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 app.get('/', (_, res) => res.json({ status: 'ok', message: 'API is running ✅' }));
 
