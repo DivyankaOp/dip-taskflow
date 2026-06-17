@@ -1,6 +1,6 @@
 // =====================================================================
 // EDIT THIS to point at your deployed backend (e.g. https://your-app.vercel.app/api)
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = 'https://dip-taskflow-v2.vercel.app/api';
 // =====================================================================
 
 const els = {
