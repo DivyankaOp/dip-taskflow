@@ -52,122 +52,296 @@
       <button id="logoutBtn" class="text-btn">Log out</button>
     </header>
 
-    <nav id="tabBar" class="tab-bar"></nav>
+    <div class="app-body">
 
-    <main id="mainContent" class="main-content">
+      <!-- ----- Sidebar nav ----- -->
+      <aside id="sidebar" class="sidebar">
+        <nav id="navList" class="nav-list"></nav>
+      </aside>
+      <div id="sidebarOverlay" class="sidebar-overlay" hidden></div>
 
-      <!-- ----- Add New Task (admin) ----- -->
-      <section id="view-add" class="view" hidden>
-        <h2 class="view-title">Assign a new task</h2>
-        <form id="addTaskForm" class="task-form">
+      <main id="mainContent" class="main-content">
 
-          <div class="field-grid">
-            <div class="field">
-              <label for="f-department">Department *</label>
-              <select id="f-department" required><option value="">Select department</option></select>
+        <!-- ----- Add New Task (admin) ----- -->
+        <section id="view-add" class="view" hidden>
+          <h2 class="view-title">Assign a new task</h2>
+          <form id="addTaskForm" class="task-form">
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-department">Department *</label>
+                <select id="f-department" required><option value="">Select department</option></select>
+              </div>
+              <div class="field">
+                <label for="f-employee">Assign to *</label>
+                <select id="f-employee" required><option value="">Select employee</option></select>
+              </div>
             </div>
-            <div class="field">
-              <label for="f-employee">Assign to *</label>
-              <select id="f-employee" required><option value="">Select employee</option></select>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-project">Project *</label>
+                <select id="f-project" required><option value="">Select project</option></select>
+              </div>
+              <div class="field">
+                <label for="f-tasktype">Task type *</label>
+                <select id="f-tasktype" required><option value="">Select task type</option></select>
+              </div>
             </div>
+
+            <div class="field">
+              <label for="f-description">Task description *</label>
+              <textarea id="f-description" rows="3" placeholder="Describe the task in detail..." required></textarea>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-hours">Hours to complete</label>
+                <input id="f-hours" type="number" min="0" step="0.5" value="8" />
+              </div>
+              <div class="field">
+                <label for="f-targetdate">Target date *</label>
+                <input id="f-targetdate" type="datetime-local" required />
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-priority">Priority</label>
+                <select id="f-priority">
+                  <option value="Low">Low</option>
+                  <option value="Medium" selected>Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-reschedule">Rescheduling possible</label>
+                <select id="f-reschedule">
+                  <option value="false" selected>No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-attachment">Attachment (optional)</label>
+                <input id="f-attachment" type="file" />
+              </div>
+              <div class="field">
+                <label for="f-voicenote">Voice note (optional)</label>
+                <input id="f-voicenote" type="file" accept="audio/*" />
+              </div>
+            </div>
+
+            <p id="addTaskMsg" class="form-error" hidden></p>
+            <button type="submit" class="primary-btn">Assign task</button>
+          </form>
+        </section>
+
+        <!-- ----- All Delegated Tasks (admin reference view) ----- -->
+        <section id="view-all" class="view" hidden>
+          <h2 class="view-title">All delegated tasks</h2>
+          <div class="filter-bar">
+            <select id="filter-department"><option value="">All departments</option></select>
+            <select id="filter-employee"><option value="">All employees</option></select>
+            <select id="filter-status">
+              <option value="">All statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+            <button id="clearAllFilters" class="ghost-btn-text">Clear filters</button>
           </div>
+          <div id="allTasksList" class="task-list"></div>
+        </section>
 
-          <div class="field-grid">
-            <div class="field">
-              <label for="f-project">Project *</label>
-              <select id="f-project" required><option value="">Select project</option></select>
-            </div>
-            <div class="field">
-              <label for="f-tasktype">Task type *</label>
-              <select id="f-tasktype" required><option value="">Select task type</option></select>
-            </div>
+        <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
+        <section id="view-my" class="view" hidden>
+          <h2 class="view-title">My tasks</h2>
+          <div class="filter-bar">
+            <select id="my-filter-status">
+              <option value="">All statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
           </div>
+          <div id="myTasksList" class="task-list"></div>
+        </section>
 
-          <div class="field">
-            <label for="f-description">Task description *</label>
-            <textarea id="f-description" rows="3" placeholder="Describe the task in detail..." required></textarea>
+        <!-- ----- Manage Employees (admin only) ----- -->
+        <section id="view-employees" class="view" hidden>
+          <div class="view-header-row">
+            <h2 class="view-title">Manage employees</h2>
+            <button id="openAddEmployee" class="primary-btn primary-btn-inline">+ Add employee</button>
           </div>
-
-          <div class="field-grid">
-            <div class="field">
-              <label for="f-hours">Hours to complete</label>
-              <input id="f-hours" type="number" min="0" step="0.5" value="8" />
-            </div>
-            <div class="field">
-              <label for="f-targetdate">Target date *</label>
-              <input id="f-targetdate" type="datetime-local" required />
-            </div>
+          <div id="employeesTableWrap" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Department</th><th>Designation</th>
+                  <th>Role</th><th>Username</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="employeesTableBody"></tbody>
+            </table>
           </div>
+        </section>
 
-          <div class="field-grid">
-            <div class="field">
-              <label for="f-priority">Priority</label>
-              <select id="f-priority">
-                <option value="Low">Low</option>
-                <option value="Medium" selected>Medium</option>
-                <option value="High">High</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="f-reschedule">Rescheduling possible</label>
-              <select id="f-reschedule">
-                <option value="false" selected>No</option>
-                <option value="true">Yes</option>
-              </select>
-            </div>
+        <!-- ----- Manage Sites (admin only) ----- -->
+        <section id="view-sites" class="view" hidden>
+          <div class="view-header-row">
+            <h2 class="view-title">Manage sites</h2>
+            <button id="openAddSite" class="primary-btn primary-btn-inline">+ Add site</button>
           </div>
-
-          <div class="field-grid">
-            <div class="field">
-              <label for="f-attachment">Attachment (optional)</label>
-              <input id="f-attachment" type="file" />
-            </div>
-            <div class="field">
-              <label for="f-voicenote">Voice note (optional)</label>
-              <input id="f-voicenote" type="file" accept="audio/*" />
-            </div>
+          <div id="sitesTableWrap" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Site name</th><th>Client</th><th>Location</th>
+                  <th>Type</th><th>Status</th><th>Team leader</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sitesTableBody"></tbody>
+            </table>
           </div>
+        </section>
 
-          <p id="addTaskMsg" class="form-error" hidden></p>
-          <button type="submit" class="primary-btn">Assign task</button>
-        </form>
-      </section>
-
-      <!-- ----- All Delegated Tasks (admin reference view) ----- -->
-      <section id="view-all" class="view" hidden>
-        <h2 class="view-title">All delegated tasks</h2>
-        <div class="filter-bar">
-          <select id="filter-department"><option value="">All departments</option></select>
-          <select id="filter-employee"><option value="">All employees</option></select>
-          <select id="filter-status">
-            <option value="">All statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-          <button id="clearAllFilters" class="ghost-btn-text">Clear filters</button>
-        </div>
-        <div id="allTasksList" class="task-list"></div>
-      </section>
-
-      <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
-      <section id="view-my" class="view" hidden>
-        <h2 class="view-title">My tasks</h2>
-        <div class="filter-bar">
-          <select id="my-filter-status">
-            <option value="">All statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-        </div>
-        <div id="myTasksList" class="task-list"></div>
-      </section>
-
-    </main>
+      </main>
+    </div>
   </section>
+
+  <!-- ============ Add Employee modal ============ -->
+  <div id="employeeModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Add new employee</h3>
+        <button class="modal-close" id="closeEmployeeModal">&times;</button>
+      </div>
+      <form id="employeeForm" class="modal-body">
+        <div class="field">
+          <label for="emp-fullname">Employee name *</label>
+          <input id="emp-fullname" type="text" placeholder="Enter full name" required />
+        </div>
+        <div class="field">
+          <label for="emp-department">Department *</label>
+          <input id="emp-department" type="text" placeholder="e.g., Site Execution" required />
+        </div>
+        <div class="field">
+          <label for="emp-designation">Designation *</label>
+          <input id="emp-designation" type="text" placeholder="e.g., Project Manager" required />
+        </div>
+        <div class="field">
+          <label for="emp-role">Role *</label>
+          <select id="emp-role" required>
+            <option value="">Select role</option>
+            <option value="employee">Employee</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <p class="form-note">Username and password will be auto-generated and shown after submission.</p>
+        <p id="employeeFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelEmployeeModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Add employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Generated credentials modal ============ -->
+  <div id="credsModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Employee added ✅</h3>
+        <button class="modal-close" id="closeCredsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Share these login details with the employee — they won't be shown again.</p>
+        <div class="creds-box">
+          <div><span>Username</span><strong id="credsUsername"></strong></div>
+          <div><span>Password</span><strong id="credsPassword"></strong></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="primary-btn primary-btn-inline" id="closeCredsModalBtn">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Add Site modal ============ -->
+  <div id="siteModal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Add new construction site</h3>
+        <button class="modal-close" id="closeSiteModal">&times;</button>
+      </div>
+      <form id="siteForm" class="modal-body">
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-client">Client name *</label>
+            <input id="site-client" type="text" placeholder="Enter client name" required />
+          </div>
+          <div class="field">
+            <label for="site-name">Site name *</label>
+            <input id="site-name" type="text" placeholder="Enter site name" required />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-type">Type of project *</label>
+            <select id="site-type" required>
+              <option value="">Select project type</option>
+              <option value="Residential">Residential</option>
+              <option value="Commercial">Commercial</option>
+              <option value="Industrial">Industrial</option>
+              <option value="Institutional">Institutional</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="site-location">Site location *</label>
+            <input id="site-location" type="text" placeholder="e.g., Pune, Mumbai, Delhi" required />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-start">Start date *</label>
+            <input id="site-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="site-end">Expected end date</label>
+            <input id="site-end" type="date" />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-teamleader">Team leader *</label>
+            <select id="site-teamleader" required><option value="">Select team leader</option></select>
+          </div>
+          <div class="field">
+            <label for="site-coordinator">Co-ordinator *</label>
+            <select id="site-coordinator" required><option value="">Select coordinator</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="site-incharge">Site incharge *</label>
+          <select id="site-incharge" required><option value="">Select site incharge</option></select>
+        </div>
+        <div class="field">
+          <label for="site-description">Project description</label>
+          <textarea id="site-description" rows="3" placeholder="Enter project description..."></textarea>
+        </div>
+        <p id="siteFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelSiteModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Add site</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
 
