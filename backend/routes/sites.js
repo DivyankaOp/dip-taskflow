@@ -8,9 +8,7 @@ router.use(requireAuth);
 const SITE_SELECT = `
   id, name, client_name, project_type, location, start_date, expected_end_date,
   status, description, created_at,
-  team_leader:users!projects_team_leader_id_fkey ( id, full_name ),
-  coordinator:users!projects_coordinator_id_fkey ( id, full_name ),
-  site_incharge:users!projects_site_incharge_id_fkey ( id, full_name )
+  team_leader_id, coordinator_id, site_incharge_id
 `;
 
 // ----------------------------- list sites (everyone, for dropdowns + table) -----------------------------
@@ -21,7 +19,25 @@ router.get('/', async (req, res) => {
       .select(SITE_SELECT)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    res.json(data);
+
+    // Fetch all user names in one shot and attach them
+    const userIds = [...new Set(
+      data.flatMap(s => [s.team_leader_id, s.coordinator_id, s.site_incharge_id]).filter(Boolean)
+    )];
+    let userMap = {};
+    if (userIds.length) {
+      const { data: users } = await supabase.from('users').select('id, full_name').in('id', userIds);
+      (users || []).forEach(u => { userMap[u.id] = u; });
+    }
+
+    const enriched = data.map(s => ({
+      ...s,
+      team_leader:  userMap[s.team_leader_id]  || null,
+      coordinator:  userMap[s.coordinator_id]  || null,
+      site_incharge: userMap[s.site_incharge_id] || null,
+    }));
+
+    res.json(enriched);
   } catch (err) {
     console.error('List sites error:', err.message);
     res.status(500).json({ error: 'Could not load sites' });
@@ -56,7 +72,18 @@ router.post('/', requireAdmin, async (req, res) => {
       .single();
 
     if (error) throw error;
-    res.status(201).json(data);
+
+    const { data: users } = await supabase.from('users').select('id, full_name')
+      .in('id', [team_leader_id, coordinator_id, site_incharge_id].filter(Boolean));
+    const userMap = {};
+    (users || []).forEach(u => { userMap[u.id] = u; });
+
+    res.status(201).json({
+      ...data,
+      team_leader:   userMap[team_leader_id]   || null,
+      coordinator:   userMap[coordinator_id]   || null,
+      site_incharge: userMap[site_incharge_id] || null,
+    });
   } catch (err) {
     console.error('Add site error:', err.message);
     res.status(500).json({ error: err.message || 'Could not add site' });
@@ -90,7 +117,19 @@ router.patch('/:id', requireAdmin, async (req, res) => {
       .single();
 
     if (error) throw error;
-    res.json(data);
+
+    const ids = [data.team_leader_id, data.coordinator_id, data.site_incharge_id].filter(Boolean);
+    const userMap = {};
+    if (ids.length) {
+      const { data: users } = await supabase.from('users').select('id, full_name').in('id', ids);
+      (users || []).forEach(u => { userMap[u.id] = u; });
+    }
+    res.json({
+      ...data,
+      team_leader:   userMap[data.team_leader_id]   || null,
+      coordinator:   userMap[data.coordinator_id]   || null,
+      site_incharge: userMap[data.site_incharge_id] || null,
+    });
   } catch (err) {
     console.error('Update site error:', err.message);
     res.status(500).json({ error: err.message || 'Could not update site' });
