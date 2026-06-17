@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<title>TaskFlow — Task Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============ LOGIN SCREEN ============ -->
+  <section id="loginScreen" class="screen login-screen">
+    <div class="login-card">
+      <div class="brand">
+        <span class="brand-mark">TF</span>
+        <div>
+          <h1>TaskFlow</h1>
+          <p class="brand-tag">Assign it. Track it. Done.</p>
+        </div>
+      </div>
+
+      <form id="loginForm" autocomplete="off">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="Enter your username" required />
+
+        <label for="password">Password</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" placeholder="Enter your password" required />
+          <button type="button" id="togglePassword" class="ghost-btn" aria-label="Show password">👁</button>
+        </div>
+
+        <p id="loginError" class="form-error" hidden></p>
+
+        <button type="submit" class="primary-btn" id="loginBtn">Log in</button>
+      </form>
+
+      <p class="hint">First time here? Ask your admin for a username and password.</p>
+    </div>
+  </section>
+
+  <!-- ============ APP SHELL (shown after login) ============ -->
+  <section id="appScreen" class="screen app-screen" hidden>
+
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn" aria-label="Toggle menu">☰</button>
+      <div class="topbar-title">
+        <strong id="userName">—</strong>
+        <span id="userRoleTag" class="role-tag">—</span>
+      </div>
+      <button id="logoutBtn" class="text-btn">Log out</button>
+    </header>
+
+    <nav id="tabBar" class="tab-bar"></nav>
+
+    <main id="mainContent" class="main-content">
+
+      <!-- ----- Add New Task (admin) ----- -->
+      <section id="view-add" class="view" hidden>
+        <h2 class="view-title">Assign a new task</h2>
+        <form id="addTaskForm" class="task-form">
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="f-department">Department *</label>
+              <select id="f-department" required><option value="">Select department</option></select>
+            </div>
+            <div class="field">
+              <label for="f-employee">Assign to *</label>
+              <select id="f-employee" required><option value="">Select employee</option></select>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="f-project">Project *</label>
+              <select id="f-project" required><option value="">Select project</option></select>
+            </div>
+            <div class="field">
+              <label for="f-tasktype">Task type *</label>
+              <select id="f-tasktype" required><option value="">Select task type</option></select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="f-description">Task description *</label>
+            <textarea id="f-description" rows="3" placeholder="Describe the task in detail..." required></textarea>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="f-hours">Hours to complete</label>
+              <input id="f-hours" type="number" min="0" step="0.5" value="8" />
+            </div>
+            <div class="field">
+              <label for="f-targetdate">Target date *</label>
+              <input id="f-targetdate" type="datetime-local" required />
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="f-priority">Priority</label>
+              <select id="f-priority">
+                <option value="Low">Low</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="High">High</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-reschedule">Rescheduling possible</label>
+              <select id="f-reschedule">
+                <option value="false" selected>No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="f-attachment">Attachment (optional)</label>
+              <input id="f-attachment" type="file" />
+            </div>
+            <div class="field">
+              <label for="f-voicenote">Voice note (optional)</label>
+              <input id="f-voicenote" type="file" accept="audio/*" />
+            </div>
+          </div>
+
+          <p id="addTaskMsg" class="form-error" hidden></p>
+          <button type="submit" class="primary-btn">Assign task</button>
+        </form>
+      </section>
+
+      <!-- ----- All Delegated Tasks (admin reference view) ----- -->
+      <section id="view-all" class="view" hidden>
+        <h2 class="view-title">All delegated tasks</h2>
+        <div class="filter-bar">
+          <select id="filter-department"><option value="">All departments</option></select>
+          <select id="filter-employee"><option value="">All employees</option></select>
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <button id="clearAllFilters" class="ghost-btn-text">Clear filters</button>
+        </div>
+        <div id="allTasksList" class="task-list"></div>
+      </section>
+
+      <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
+      <section id="view-my" class="view" hidden>
+        <h2 class="view-title">My tasks</h2>
+        <div class="filter-bar">
+          <select id="my-filter-status">
+            <option value="">All statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </div>
+        <div id="myTasksList" class="task-list"></div>
+      </section>
+
+    </main>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
