@@ -1,4 +1,3 @@
-@'
 {
   "version": 2,
   "builds": [
@@ -8,4 +7,3 @@
     { "src": "/(.*)", "dest": "index.js" }
   ]
 }
-'@ | Set-Content -Path vercel.json -Encoding utf8
