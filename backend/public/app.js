@@ -85,6 +85,14 @@ const els = {
   closeRescheduleModal: document.getElementById('closeRescheduleModal'),
   cancelRescheduleModal: document.getElementById('cancelRescheduleModal'),
 
+  // reassign
+  reassignModal: document.getElementById('reassignModal'),
+  reassignForm: document.getElementById('reassignForm'),
+  reassignFormMsg: document.getElementById('reassignFormMsg'),
+  reassignEmployee: document.getElementById('reassign-employee'),
+  closeReassignModal: document.getElementById('closeReassignModal'),
+  cancelReassignModal: document.getElementById('cancelReassignModal'),
+
   // sites
   sitesTableBody: document.getElementById('sitesTableBody'),
   openAddSite: document.getElementById('openAddSite'),
@@ -452,8 +460,27 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
     return;
   }
 
+  if (verificationMode) {
+    container.className = 'task-list';
+    container.innerHTML = '';
+    tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions, verificationMode })));
+    return;
+  }
+
+  // Everywhere else: cards on mobile, a table on desktop (CSS toggles which shows).
+  container.className = '';
   container.innerHTML = '';
-  tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions, verificationMode })));
+
+  const mobileWrap = document.createElement('div');
+  mobileWrap.className = 'task-list task-list-mobile';
+  tasks.forEach((task) => mobileWrap.appendChild(renderTaskCard(task, { showAssignee, allowActions })));
+
+  const desktopWrap = document.createElement('div');
+  desktopWrap.className = 'task-list-desktop table-wrap';
+  desktopWrap.appendChild(renderTaskTable(tasks, { showAssignee, allowActions }));
+
+  container.appendChild(mobileWrap);
+  container.appendChild(desktopWrap);
 }
 
 function verificationBadgeHtml(task) {
@@ -469,14 +496,107 @@ function verificationBadgeHtml(task) {
   return '';
 }
 
+// Items for the "⋮" overflow menu. In the admin's "All delegated tasks"
+// view this is the primary way to manage a task; everywhere else it just
+// holds the secondary actions (verification / reschedule / ticket).
+function buildCardMenuItems(task, { showAssignee }) {
+  const isActuallyMine = task.assigned_to_user?.id === state.user.id;
+  const canManageThisTask = state.user.role === 'admin' || isActuallyMine;
+  const isPendingVerification = task.verification_status === 'Pending Verification';
+  const isAdminManaging = showAssignee && state.user.role === 'admin';
+
+  const items = [];
+
+  if (isAdminManaging) {
+    if (task.status !== 'Completed') {
+      items.push({ label: '✅ Mark as done', onClick: () => updateStatus(task.id, 'Completed') });
+    }
+    items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
+    items.push({ label: '🔁 Reassign', onClick: () => openReassignModal(task.id) });
+    if (task.status !== 'Rejected') {
+      items.push({ label: '❌ Reject task', onClick: () => {
+        const reason = prompt('Reason for rejecting this task (optional):') || '';
+        updateStatus(task.id, 'Rejected', reason);
+      }});
+    }
+  } else if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
+    items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
+  }
+
+  if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
+    items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
+  }
+  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id) });
+
+  return items;
+}
+
+// The big colored Accept/Reject/Mark-complete/Re-open buttons. Hidden for
+// the admin's "All delegated tasks" view, where those same actions live in
+// the "⋮" menu instead (Mark as done / Reject task).
+function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
+  const isOwnTask = state.user.role !== 'admin' || (showAssignee === false);
+  const isPendingVerification = task.verification_status === 'Pending Verification';
+  const isAdminManaging = showAssignee && state.user.role === 'admin';
+  const canAct = allowActions && (state.user.role === 'admin' || isOwnTask)
+    && task.status !== 'Completed' && !isPendingVerification && !isAdminManaging;
+
+  const buttons = [];
+  if (!canAct) return buttons;
+
+  if (task.status === 'Pending') {
+    buttons.push(makeActionBtn('action-start', 'Accept', () => updateStatus(task.id, 'In Progress')));
+    buttons.push(makeActionBtn('action-reject', 'Reject', () => {
+      const reason = prompt('Reason for rejecting this task (optional):') || '';
+      updateStatus(task.id, 'Rejected', reason);
+    }));
+  }
+  if (task.status === 'In Progress') {
+    buttons.push(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
+  }
+  if (task.status === 'Rejected') {
+    buttons.push(makeActionBtn('action-start', 'Re-open', () => updateStatus(task.id, 'Pending')));
+  }
+  return buttons;
+}
+
+function buildCardMenuElement(task, { showAssignee }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'card-menu';
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.className = 'card-menu-btn';
+  menuBtn.setAttribute('aria-label', 'More options');
+  menuBtn.textContent = '⋮';
+  const menuList = document.createElement('div');
+  menuList.className = 'card-menu-list';
+  menuList.hidden = true;
+
+  buildCardMenuItems(task, { showAssignee }).forEach((item) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card-menu-item';
+    btn.textContent = item.label;
+    btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
+    menuList.appendChild(btn);
+  });
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
+    menuList.hidden = !menuList.hidden;
+  });
+
+  wrap.appendChild(menuBtn);
+  wrap.appendChild(menuList);
+  return wrap;
+}
+
 function renderTaskCard(task, { showAssignee, allowActions, verificationMode = false }) {
   const card = document.createElement('div');
   card.className = `task-card priority-${task.priority}`;
 
   const statusClass = task.status.replace(/\s/g, '');
-  const isOwnTask = state.user.role !== 'admin' || (showAssignee === false);
-  const isActuallyMine = task.assigned_to_user?.id === state.user.id;
-  const isPendingVerification = task.verification_status === 'Pending Verification';
 
   card.innerHTML = `
     <div class="task-card-top">
@@ -485,11 +605,6 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
         <div class="task-card-type">${task.task_type?.name ?? '—'} · ${task.department?.name ?? '—'}</div>
       </div>
       <span class="pill pill-${task.priority}">${task.priority}</span>
-      ${allowActions && !verificationMode ? `
-        <div class="card-menu">
-          <button type="button" class="card-menu-btn" aria-label="More options">⋮</button>
-          <div class="card-menu-list" hidden></div>
-        </div>` : ''}
     </div>
 
     <p class="task-card-desc">${escapeHtml(task.description)}</p>
@@ -511,40 +626,13 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     </div>
   `;
 
-  // ---- 3-dot menu wiring ----
   if (allowActions && !verificationMode) {
-    const menuBtn = card.querySelector('.card-menu-btn');
-    const menuList = card.querySelector('.card-menu-list');
-    const canManageThisTask = state.user.role === 'admin' || isActuallyMine;
-
-    const items = [];
-    if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
-      items.push({ label: '✅ Send for verification', onClick: () => openVerifyModal(task.id) });
-    }
-    if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
-      items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
-    }
-    items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id) });
-
-    items.forEach((item) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'card-menu-item';
-      btn.textContent = item.label;
-      btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
-      menuList.appendChild(btn);
-    });
-
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
-      menuList.hidden = !menuList.hidden;
-    });
+    card.querySelector('.task-card-top').appendChild(buildCardMenuElement(task, { showAssignee }));
   }
 
-  // ---- footer actions ----
+  const actionsEl = card.querySelector('.task-actions');
+
   if (verificationMode) {
-    const actionsEl = card.querySelector('.task-actions');
     actionsEl.appendChild(makeActionBtn('action-complete', 'Approve', () => verifyTask(task.id, true)));
     actionsEl.appendChild(makeActionBtn('action-reject', 'Reject', () => {
       const note = prompt('Reason for rejecting this verification (optional):') || '';
@@ -553,26 +641,52 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     return card;
   }
 
-  const actionsEl = card.querySelector('.task-actions');
-  const canAct = allowActions && (state.user.role === 'admin' || isOwnTask) && task.status !== 'Completed' && !isPendingVerification;
-
-  if (canAct) {
-    if (task.status === 'Pending') {
-      actionsEl.appendChild(makeActionBtn('action-start', 'Accept', () => updateStatus(task.id, 'In Progress')));
-      actionsEl.appendChild(makeActionBtn('action-reject', 'Reject', () => {
-        const reason = prompt('Reason for rejecting this task (optional):') || '';
-        updateStatus(task.id, 'Rejected', reason);
-      }));
-    }
-    if (task.status === 'In Progress') {
-      actionsEl.appendChild(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
-    }
-    if (task.status === 'Rejected') {
-      actionsEl.appendChild(makeActionBtn('action-start', 'Re-open', () => updateStatus(task.id, 'Pending')));
-    }
-  }
-
+  buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
   return card;
+}
+
+// ----------------------------- desktop table view -----------------------------
+function renderTaskTable(tasks, { showAssignee, allowActions }) {
+  const table = document.createElement('table');
+  table.className = 'data-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Project</th><th>Type / Dept</th>
+        ${showAssignee ? '<th>Assigned to</th>' : ''}
+        <th>Priority</th><th>Due date</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector('tbody');
+  tasks.forEach((task) => tbody.appendChild(renderTaskRow(task, { showAssignee, allowActions })));
+  return table;
+}
+
+function renderTaskRow(task, { showAssignee, allowActions }) {
+  const tr = document.createElement('tr');
+  const statusClass = task.status.replace(/\s/g, '');
+
+  tr.innerHTML = `
+    <td>${escapeHtml(task.project?.name ?? '—')}</td>
+    <td>${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</td>
+    ${showAssignee ? `<td>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</td>` : ''}
+    <td><span class="pill pill-${task.priority}">${task.priority}</span></td>
+    <td>${fmtDate(task.target_date)}</td>
+    <td>
+      <span class="pill pill-${statusClass}">${task.status}</span>
+      ${verificationBadgeHtml(task)}
+    </td>
+    <td class="row-actions"></td>
+  `;
+
+  const actionsCell = tr.querySelector('.row-actions');
+  if (allowActions) {
+    buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsCell.appendChild(btn));
+    actionsCell.appendChild(buildCardMenuElement(task, { showAssignee }));
+  }
+  return tr;
 }
 
 function makeActionBtn(cls, label, onClick) {
@@ -688,6 +802,36 @@ els.rescheduleForm.addEventListener('submit', async (e) => {
   } catch (err) {
     els.rescheduleFormMsg.textContent = err.message;
     els.rescheduleFormMsg.hidden = false;
+  }
+});
+
+// ===================================================================
+// REASSIGN (admin only)
+// ===================================================================
+
+function openReassignModal(taskId) {
+  state.pendingTaskId = taskId;
+  els.reassignFormMsg.hidden = true;
+  fillSelect(els.reassignEmployee, state.master.employees, { placeholder: 'Select employee', labelKey: 'full_name' });
+  els.reassignModal.hidden = false;
+}
+els.closeReassignModal.addEventListener('click', () => { els.reassignModal.hidden = true; });
+els.cancelReassignModal.addEventListener('click', () => { els.reassignModal.hidden = true; });
+
+els.reassignForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.reassignFormMsg.hidden = true;
+  try {
+    await api(`/tasks/${state.pendingTaskId}/reassign`, {
+      method: 'PATCH',
+      body: { assigned_to: els.reassignEmployee.value }
+    });
+    showToast('Task reassigned ✅', 'success');
+    els.reassignModal.hidden = true;
+    reloadCurrentTaskView();
+  } catch (err) {
+    els.reassignFormMsg.textContent = err.message;
+    els.reassignFormMsg.hidden = false;
   }
 });
 
