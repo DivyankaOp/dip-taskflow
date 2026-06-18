@@ -53,4 +53,17 @@ router.get('/employees', async (req, res) => {
   res.json(data);
 });
 
+// Who can verify a completed task: admins always can, plus anyone the
+// admin has explicitly flagged with can_verify (e.g. a Senior Estimator).
+router.get('/verifiers', async (req, res) => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, full_name, role, designation')
+    .eq('is_active', true)
+    .or('can_verify.eq.true,role.eq.admin')
+    .order('full_name');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 module.exports = router;
