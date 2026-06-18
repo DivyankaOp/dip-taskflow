@@ -139,6 +139,7 @@ input, select, textarea, button { font-family: var(--font-body); font-size: 0.95
 .view-title { font-size: 1.1rem; margin-bottom: 14px; }
 .view-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .view-header-row .view-title { margin-bottom: 0; }
+.subsection-title { font-size: 0.92rem; margin: 0 0 12px; }
 
 /* Mobile: sidebar becomes an off-canvas drawer */
 @media (max-width: 760px) {
