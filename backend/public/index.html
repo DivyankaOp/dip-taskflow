@@ -467,6 +467,28 @@
     </div>
   </div>
 
+  <!-- ============ Reassign task modal ============ -->
+  <div id="reassignModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Reassign task</h3>
+        <button class="modal-close" id="closeReassignModal">&times;</button>
+      </div>
+      <form id="reassignForm" class="modal-body">
+        <div class="field">
+          <label for="reassign-employee">New assignee *</label>
+          <select id="reassign-employee" required><option value="">Select employee</option></select>
+        </div>
+        <p class="form-note">The task will be reset to "Pending" for the new assignee.</p>
+        <p id="reassignFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelReassignModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Reassign</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
