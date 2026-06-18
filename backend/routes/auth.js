@@ -15,7 +15,7 @@ router.post('/login', async (req, res) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, username, password_hash, full_name, role, is_active')
+      .select('id, username, password_hash, full_name, role, is_active, can_verify')
       .eq('username', username.trim())
       .maybeSingle();
 
@@ -36,7 +36,8 @@ router.post('/login', async (req, res) => {
       id: user.id,
       username: user.username,
       full_name: user.full_name,
-      role: user.role
+      role: user.role,
+      can_verify: !!user.can_verify
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
