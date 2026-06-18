@@ -291,7 +291,7 @@ router.patch('/:id/reschedule', async (req, res) => {
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
 
-    if (!existing.rescheduling_possible) {
+    if (!existing.rescheduling_possible && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Rescheduling was not allowed for this task' });
     }
     const isOwnTask = existing.assigned_to === req.user.id;
@@ -311,6 +311,37 @@ router.patch('/:id/reschedule', async (req, res) => {
   } catch (err) {
     console.error('Reschedule error:', err.message);
     res.status(500).json({ error: err.message || 'Could not reschedule task' });
+  }
+});
+
+// ----------------------------- reassign to a different employee (admin only) -----------------------------
+router.patch('/:id/reassign', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { assigned_to } = req.body || {};
+    if (!assigned_to) {
+      return res.status(400).json({ error: 'Please choose who to reassign this task to' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        assigned_to,
+        status: 'Pending',
+        status_note: null,
+        verifier_id: null,
+        verification_status: null,
+        verification_note: null
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reassign task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reassign task' });
   }
 });
 
