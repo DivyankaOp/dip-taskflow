@@ -1,34 +1,394 @@
-require('dotenv').config();
-const path    = require('path');
-const express = require('express');
-const cors    = require('cors');
-const app     = express();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<title>TaskFlow — Task Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
-app.use(cors({ origin: '*' }));
-app.use(express.json());
+  <!-- ============ LOGIN SCREEN ============ -->
+  <section id="loginScreen" class="screen login-screen">
+    <div class="login-card">
+      <div class="brand">
+        <span class="brand-mark">TF</span>
+        <div>
+          <h1>TaskFlow</h1>
+          <p class="brand-tag">Assign it. Track it. Done.</p>
+        </div>
+      </div>
 
-// API routes
-app.use('/api/auth',      require('./routes/auth'));
-app.use('/api/tasks',     require('./routes/tasks'));
-app.use('/api/master',    require('./routes/master'));
-app.use('/api/employees', require('./routes/employees'));
-app.use('/api/sites',     require('./routes/sites'));
-app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
+      <form id="loginForm" autocomplete="off">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="Enter your username" required />
 
-// Serve the frontend (index.html, style.css, app.js) straight from Express.
-// This makes the function the single source of truth for routing — we are
-// no longer relying on Vercel's vercel.json static-build matching, which is
-// what was causing "/" to fall through and return the JSON health message
-// instead of the actual login page.
-app.use(express.static(path.join(__dirname, 'public')));
+        <label for="password">Password</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" placeholder="Enter your password" required />
+          <button type="button" id="togglePassword" class="ghost-btn" aria-label="Show password">👁</button>
+        </div>
 
-const PORT = process.env.PORT || 4000;
+        <p id="loginError" class="form-error" hidden></p>
 
-// Only start a listening server when running locally (e.g. `npm run dev`).
-// On Vercel, the platform itself invokes the exported app per-request —
-// calling app.listen() there causes the function to crash.
-if (require.main === module) {
-  app.listen(PORT, () => console.log(`✅ Server ready → http://localhost:${PORT}`));
-}
+        <button type="submit" class="primary-btn" id="loginBtn">Log in</button>
+      </form>
 
-module.exports = app;
+      <p class="hint">First time here? Ask your admin for a username and password.</p>
+    </div>
+  </section>
+
+  <!-- ============ APP SHELL (shown after login) ============ -->
+  <section id="appScreen" class="screen app-screen" hidden>
+
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn" aria-label="Toggle menu">☰</button>
+      <div class="topbar-title">
+        <strong id="userName">—</strong>
+        <span id="userRoleTag" class="role-tag">—</span>
+      </div>
+      <button id="logoutBtn" class="text-btn">Log out</button>
+    </header>
+
+    <div class="app-body">
+
+      <!-- ----- Sidebar nav ----- -->
+      <aside id="sidebar" class="sidebar">
+        <nav id="navList" class="nav-list"></nav>
+      </aside>
+      <div id="sidebarOverlay" class="sidebar-overlay" hidden></div>
+
+      <main id="mainContent" class="main-content">
+
+        <!-- ----- Add New Task (admin) ----- -->
+        <section id="view-add" class="view" hidden>
+          <h2 class="view-title">Assign a new task</h2>
+          <form id="addTaskForm" class="task-form">
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-department">Department *</label>
+                <select id="f-department" required><option value="">Select department</option></select>
+              </div>
+              <div class="field">
+                <label for="f-employee">Assign to *</label>
+                <select id="f-employee" required><option value="">Select employee</option></select>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-project">Project *</label>
+                <select id="f-project" required><option value="">Select project</option></select>
+              </div>
+              <div class="field">
+                <label for="f-tasktype">Task type *</label>
+                <select id="f-tasktype" required><option value="">Select task type</option></select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="f-description">Task description *</label>
+              <textarea id="f-description" rows="3" placeholder="Describe the task in detail..." required></textarea>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-hours">Hours to complete</label>
+                <input id="f-hours" type="number" min="0" step="0.5" value="8" />
+              </div>
+              <div class="field">
+                <label for="f-targetdate">Target date *</label>
+                <input id="f-targetdate" type="datetime-local" required />
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-priority">Priority</label>
+                <select id="f-priority">
+                  <option value="Low">Low</option>
+                  <option value="Medium" selected>Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-reschedule">Rescheduling possible</label>
+                <select id="f-reschedule">
+                  <option value="false" selected>No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="f-attachment">Attachment (optional)</label>
+                <input id="f-attachment" type="file" />
+              </div>
+              <div class="field">
+                <label for="f-voicenote">Voice note (optional)</label>
+                <input id="f-voicenote" type="file" accept="audio/*" />
+              </div>
+            </div>
+
+            <p id="addTaskMsg" class="form-error" hidden></p>
+            <button type="submit" class="primary-btn">Assign task</button>
+          </form>
+        </section>
+
+        <!-- ----- All Delegated Tasks (admin reference view) ----- -->
+        <section id="view-all" class="view" hidden>
+          <h2 class="view-title">All delegated tasks</h2>
+          <div class="filter-bar">
+            <select id="filter-department"><option value="">All departments</option></select>
+            <select id="filter-employee"><option value="">All employees</option></select>
+            <select id="filter-status">
+              <option value="">All statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+            <button id="clearAllFilters" class="ghost-btn-text">Clear filters</button>
+          </div>
+          <div id="allTasksList" class="task-list"></div>
+        </section>
+
+        <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
+        <section id="view-my" class="view" hidden>
+          <h2 class="view-title">My tasks</h2>
+          <div class="filter-bar">
+            <select id="my-filter-status">
+              <option value="">All statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          <div id="myTasksList" class="task-list"></div>
+        </section>
+
+        <!-- ----- Manage Employees (admin only) ----- -->
+        <section id="view-employees" class="view" hidden>
+          <div class="view-header-row">
+            <h2 class="view-title">Manage employees</h2>
+            <button id="openAddEmployee" class="primary-btn primary-btn-inline">+ Add employee</button>
+          </div>
+          <div id="employeesTableWrap" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Department</th><th>Designation</th>
+                  <th>Role</th><th>Username</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="employeesTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ----- Manage Sites (admin only) ----- -->
+        <section id="view-sites" class="view" hidden>
+          <div class="view-header-row">
+            <h2 class="view-title">Manage sites</h2>
+            <button id="openAddSite" class="primary-btn primary-btn-inline">+ Add site</button>
+          </div>
+          <div id="sitesTableWrap" class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Site name</th><th>Client</th><th>Location</th>
+                  <th>Type</th><th>Status</th><th>Team leader</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sitesTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ----- Manage Departments & Task Types (admin only) ----- -->
+        <section id="view-masterdata" class="view" hidden>
+          <h2 class="view-title">Departments &amp; task types</h2>
+          <div class="field-grid">
+
+            <div>
+              <h3 class="subsection-title">Departments</h3>
+              <form id="addDepartmentForm" class="task-form">
+                <div class="field">
+                  <label for="new-department-name">Department name</label>
+                  <input id="new-department-name" type="text" placeholder="e.g., Engg. Division" required />
+                </div>
+                <p id="addDepartmentMsg" class="form-error" hidden></p>
+                <button type="submit" class="primary-btn">Add department</button>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr><th>Department</th></tr></thead>
+                  <tbody id="departmentsTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="subsection-title">Task types</h3>
+              <form id="addTaskTypeForm" class="task-form">
+                <div class="field">
+                  <label for="new-tasktype-name">Task type name</label>
+                  <input id="new-tasktype-name" type="text" placeholder="e.g., Site Visit" required />
+                </div>
+                <p id="addTaskTypeMsg" class="form-error" hidden></p>
+                <button type="submit" class="primary-btn">Add task type</button>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr><th>Task type</th></tr></thead>
+                  <tbody id="taskTypesTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </section>
+
+  <!-- ============ Add Employee modal ============ -->
+  <div id="employeeModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Add new employee</h3>
+        <button class="modal-close" id="closeEmployeeModal">&times;</button>
+      </div>
+      <form id="employeeForm" class="modal-body">
+        <div class="field">
+          <label for="emp-fullname">Employee name *</label>
+          <input id="emp-fullname" type="text" placeholder="Enter full name" required />
+        </div>
+        <div class="field">
+          <label for="emp-department">Department *</label>
+          <input id="emp-department" type="text" placeholder="e.g., Site Execution" required />
+        </div>
+        <div class="field">
+          <label for="emp-designation">Designation *</label>
+          <input id="emp-designation" type="text" placeholder="e.g., Project Manager" required />
+        </div>
+        <div class="field">
+          <label for="emp-role">Role *</label>
+          <select id="emp-role" required>
+            <option value="">Select role</option>
+            <option value="employee">Employee</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <p class="form-note">Username and password will be auto-generated and shown after submission.</p>
+        <p id="employeeFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelEmployeeModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Add employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Generated credentials modal ============ -->
+  <div id="credsModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Employee added ✅</h3>
+        <button class="modal-close" id="closeCredsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Share these login details with the employee — they won't be shown again.</p>
+        <div class="creds-box">
+          <div><span>Username</span><strong id="credsUsername"></strong></div>
+          <div><span>Password</span><strong id="credsPassword"></strong></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="primary-btn primary-btn-inline" id="closeCredsModalBtn">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Add Site modal ============ -->
+  <div id="siteModal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Add new construction site</h3>
+        <button class="modal-close" id="closeSiteModal">&times;</button>
+      </div>
+      <form id="siteForm" class="modal-body">
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-client">Client name *</label>
+            <input id="site-client" type="text" placeholder="Enter client name" required />
+          </div>
+          <div class="field">
+            <label for="site-name">Site name *</label>
+            <input id="site-name" type="text" placeholder="Enter site name" required />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-type">Type of project *</label>
+            <select id="site-type" required>
+              <option value="">Select project type</option>
+              <option value="Residential">Residential</option>
+              <option value="Commercial">Commercial</option>
+              <option value="Industrial">Industrial</option>
+              <option value="Institutional">Institutional</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="site-location">Site location *</label>
+            <input id="site-location" type="text" placeholder="e.g., Pune, Mumbai, Delhi" required />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-start">Start date *</label>
+            <input id="site-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="site-end">Expected end date</label>
+            <input id="site-end" type="date" />
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="site-teamleader">Team leader *</label>
+            <select id="site-teamleader" required><option value="">Select team leader</option></select>
+          </div>
+          <div class="field">
+            <label for="site-coordinator">Co-ordinator *</label>
+            <select id="site-coordinator" required><option value="">Select coordinator</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="site-incharge">Site incharge *</label>
+          <select id="site-incharge" required><option value="">Select site incharge</option></select>
+        </div>
+        <div class="field">
+          <label for="site-description">Project description</label>
+          <textarea id="site-description" rows="3" placeholder="Enter project description..."></textarea>
+        </div>
+        <p id="siteFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelSiteModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Add site</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
