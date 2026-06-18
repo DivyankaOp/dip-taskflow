@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, department, designation, role, is_active, created_at')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify, created_at')
       .order('created_at', { ascending: true });
     if (error) throw error;
     res.json(data);
@@ -100,7 +100,7 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { full_name, department, designation, role, is_active } = req.body || {};
+    const { full_name, department, designation, role, is_active, can_verify } = req.body || {};
 
     const updates = {};
     if (full_name !== undefined) updates.full_name = full_name;
@@ -113,6 +113,7 @@ router.patch('/:id', async (req, res) => {
       updates.role = role;
     }
     if (is_active !== undefined) updates.is_active = is_active;
+    if (can_verify !== undefined) updates.can_verify = can_verify;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'Nothing to update' });
@@ -122,7 +123,7 @@ router.patch('/:id', async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', id)
-      .select('id, username, full_name, department, designation, role, is_active')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify')
       .single();
 
     if (error) throw error;
