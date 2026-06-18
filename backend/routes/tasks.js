@@ -18,6 +18,7 @@ const BUCKET = 'task-files';
 const TASK_SELECT = `
   id, description, hours_to_complete, target_date, priority,
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
+  accepted_at, rejected_at,
   verification_status, verification_note,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
@@ -161,6 +162,77 @@ router.get('/verifications', async (req, res) => {
   }
 });
 
+// ----------------------------- accept task (assignee accepts a newly delegated task) -----------------------------
+// Frontend should show this (and /reject) instead of the status menu while status === 'Pending'.
+// Once accepted, status moves to 'In Progress' and the normal 3-dot menu (Mark as done / Reschedule / etc.) takes over.
+router.patch('/:id/accept', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to, status').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only accept your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'In Progress', accepted_at: new Date().toISOString() })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Accept task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not accept task' });
+  }
+});
+
+// ----------------------------- reject task (assignee declines a newly delegated task — reason required) -----------------------------
+router.patch('/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Please give a reason for rejecting this task' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only reject your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        status: 'Rejected',
+        rejected_at: new Date().toISOString(),
+        status_note: `Rejected by ${req.user.full_name}: ${reason.trim()}`
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reject task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reject task' });
+  }
+});
+
 // ----------------------------- update status (the task's own assignee, or admin) -----------------------------
 router.patch('/:id/status', async (req, res) => {
   try {
@@ -189,6 +261,7 @@ router.patch('/:id/status', async (req, res) => {
     const updates = { status };
     if (status === 'Rejected') {
       updates.status_note = `Rejected by ${req.user.full_name}${status_note ? `: ${status_note}` : ''}`;
+      updates.rejected_at = new Date().toISOString();
     } else if (status === 'Pending') {
       updates.status_note = null; // cleared on re-open
     }
