@@ -183,7 +183,7 @@
               <thead>
                 <tr>
                   <th>Name</th><th>Department</th><th>Designation</th>
-                  <th>Role</th><th>Username</th><th>Status</th><th>Actions</th>
+                  <th>Role</th><th>Username</th><th>Status</th><th>Verifier</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody id="employeesTableBody"></tbody>
@@ -252,6 +252,21 @@
             </div>
 
           </div>
+        </section>
+
+        <!-- ----- Verification requests (verifiers + admin) ----- -->
+        <section id="view-verifications" class="view" hidden>
+          <h2 class="view-title">Verification requests</h2>
+          <div id="verificationsList" class="task-list"></div>
+        </section>
+
+        <!-- ----- Tickets (everyone) ----- -->
+        <section id="view-tickets" class="view" hidden>
+          <div class="view-header-row">
+            <h2 class="view-title">Tickets</h2>
+            <button id="openRaiseTicket" class="primary-btn primary-btn-inline">+ Raise ticket</button>
+          </div>
+          <div id="ticketsList" class="ticket-list"></div>
         </section>
 
       </main>
@@ -388,6 +403,69 @@
   </div>
 
   <div id="toast" class="toast" hidden></div>
+
+  <!-- ============ Send for verification modal ============ -->
+  <div id="verifyModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Send for verification</h3>
+        <button class="modal-close" id="closeVerifyModal">&times;</button>
+      </div>
+      <form id="verifyForm" class="modal-body">
+        <div class="field">
+          <label for="verify-person">Send to *</label>
+          <select id="verify-person" required><option value="">Select a verifier</option></select>
+        </div>
+        <p id="verifyFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelVerifyModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Raise a ticket modal ============ -->
+  <div id="ticketModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Raise a ticket</h3>
+        <button class="modal-close" id="closeTicketModal">&times;</button>
+      </div>
+      <form id="ticketForm" class="modal-body">
+        <div class="field">
+          <label for="ticket-description">What's the issue? *</label>
+          <textarea id="ticket-description" rows="4" placeholder="Describe the issue..." required></textarea>
+        </div>
+        <p id="ticketFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelTicketModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Submit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Reschedule modal ============ -->
+  <div id="rescheduleModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Reschedule task</h3>
+        <button class="modal-close" id="closeRescheduleModal">&times;</button>
+      </div>
+      <form id="rescheduleForm" class="modal-body">
+        <div class="field">
+          <label for="reschedule-date">New target date *</label>
+          <input id="reschedule-date" type="datetime-local" required />
+        </div>
+        <p id="rescheduleFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelRescheduleModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
