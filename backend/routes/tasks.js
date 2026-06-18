@@ -6,9 +6,11 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
+// 5 MB per file by default — change MAX_FILE_SIZE_MB below if you actually need a larger limit.
+const MAX_FILE_SIZE_MB = 5;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 } // 15MB per file
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 }
 });
 
 const BUCKET = 'task-files';
@@ -19,7 +21,7 @@ const TASK_SELECT = `
   id, description, hours_to_complete, target_date, priority,
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
   accepted_at, rejected_at,
-  verification_status, verification_note,
+  verification_status, verification_note, verification_attachment_urls,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
   department:departments ( id, name ),
@@ -282,38 +284,53 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 // ----------------------------- send for verification (task owner, or admin) -----------------------------
-router.patch('/:id/send-for-verification', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { verifier_id } = req.body || {};
-    if (!verifier_id) {
-      return res.status(400).json({ error: 'Please choose who should verify this task' });
+// Now multipart/form-data: text field "verifier_id" + up to 3 files under field name "verification_files".
+router.patch(
+  '/:id/send-for-verification',
+  upload.array('verification_files', 3),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { verifier_id } = req.body || {};
+      if (!verifier_id) {
+        return res.status(400).json({ error: 'Please choose who should verify this task' });
+      }
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+      const isOwnTask = existing.assigned_to === req.user.id;
+      if (!isOwnTask && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'You can only send your own tasks for verification' });
+      }
+
+      const files = req.files || [];
+      const verification_attachment_urls = await Promise.all(
+        files.map((file) => uploadFile(file, 'verification-attachments'))
+      );
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          verifier_id,
+          verification_status: 'Pending Verification',
+          verification_note: null,
+          verification_attachment_urls
+        })
+        .eq('id', id)
+        .select(TASK_SELECT)
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err) {
+      console.error('Send for verification error:', err.message);
+      res.status(500).json({ error: err.message || 'Could not send for verification' });
     }
-
-    const { data: existing, error: fetchErr } = await supabase
-      .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
-    if (fetchErr) throw fetchErr;
-    if (!existing) return res.status(404).json({ error: 'Task not found' });
-
-    const isOwnTask = existing.assigned_to === req.user.id;
-    if (!isOwnTask && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'You can only send your own tasks for verification' });
-    }
-
-    const { data, error } = await supabase
-      .from('tasks')
-      .update({ verifier_id, verification_status: 'Pending Verification', verification_note: null })
-      .eq('id', id)
-      .select(TASK_SELECT)
-      .single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    console.error('Send for verification error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not send for verification' });
   }
-});
+);
 
 // ----------------------------- approve / reject a verification (the chosen verifier, or admin) -----------------------------
 router.patch('/:id/verify', async (req, res) => {
