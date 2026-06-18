@@ -329,3 +329,11 @@ input, select, textarea, button { font-family: var(--font-body); font-size: 0.95
 .ticket-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .ticket-desc { margin: 6px 0 8px; font-size: 0.88rem; color: #353A4A; }
 .ticket-meta { font-size: 0.76rem; color: var(--muted); }
+
+/* ---------------- Mobile cards vs desktop table for task lists ---------------- */
+.task-list-desktop { display: none; }
+.task-list-desktop .data-table td { vertical-align: top; }
+@media (min-width: 761px) {
+  .task-list-mobile { display: none; }
+  .task-list-desktop { display: block; }
+}
