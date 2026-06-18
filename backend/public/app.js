@@ -58,6 +58,33 @@ const els = {
   addTaskTypeForm: document.getElementById('addTaskTypeForm'),
   addTaskTypeMsg: document.getElementById('addTaskTypeMsg'),
 
+  // verification requests
+  verificationsList: document.getElementById('verificationsList'),
+  verifyModal: document.getElementById('verifyModal'),
+  verifyForm: document.getElementById('verifyForm'),
+  verifyFormMsg: document.getElementById('verifyFormMsg'),
+  verifyPerson: document.getElementById('verify-person'),
+  closeVerifyModal: document.getElementById('closeVerifyModal'),
+  cancelVerifyModal: document.getElementById('cancelVerifyModal'),
+
+  // tickets
+  ticketsList: document.getElementById('ticketsList'),
+  openRaiseTicket: document.getElementById('openRaiseTicket'),
+  ticketModal: document.getElementById('ticketModal'),
+  ticketForm: document.getElementById('ticketForm'),
+  ticketFormMsg: document.getElementById('ticketFormMsg'),
+  ticketDescription: document.getElementById('ticket-description'),
+  closeTicketModal: document.getElementById('closeTicketModal'),
+  cancelTicketModal: document.getElementById('cancelTicketModal'),
+
+  // reschedule
+  rescheduleModal: document.getElementById('rescheduleModal'),
+  rescheduleForm: document.getElementById('rescheduleForm'),
+  rescheduleFormMsg: document.getElementById('rescheduleFormMsg'),
+  rescheduleDate: document.getElementById('reschedule-date'),
+  closeRescheduleModal: document.getElementById('closeRescheduleModal'),
+  cancelRescheduleModal: document.getElementById('cancelRescheduleModal'),
+
   // sites
   sitesTableBody: document.getElementById('sitesTableBody'),
   openAddSite: document.getElementById('openAddSite'),
@@ -77,7 +104,8 @@ let state = {
   token: localStorage.getItem('tf_token') || null,
   user: JSON.parse(localStorage.getItem('tf_user') || 'null'),
   master: { departments: [], projects: [], taskTypes: [], employees: [] },
-  activeView: null
+  activeView: null,
+  pendingTaskId: null // which task a verify/ticket/reschedule modal currently targets
 };
 
 // ----------------------------- helpers -----------------------------
@@ -136,6 +164,13 @@ function fmtDateOnly(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function toDatetimeLocalValue(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function escapeHtml(str) {
@@ -245,6 +280,20 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
     els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
   }
+
+  if (isAdmin || state.user.can_verify) {
+    const verifyLabel = document.createElement('div');
+    verifyLabel.className = 'nav-section-label';
+    verifyLabel.textContent = 'Verification';
+    els.navList.appendChild(verifyLabel);
+    els.navList.appendChild(makeNavButton('verifications', '🔎 Verification requests'));
+  }
+
+  const supportLabel = document.createElement('div');
+  supportLabel.className = 'nav-section-label';
+  supportLabel.textContent = 'Support';
+  els.navList.appendChild(supportLabel);
+  els.navList.appendChild(makeNavButton('tickets', '🎫 Tickets'));
 }
 
 function makeNavButton(key, label) {
@@ -270,6 +319,8 @@ function switchView(viewKey) {
   if (viewKey === 'employees') loadEmployees();
   if (viewKey === 'sites') loadSites();
   if (viewKey === 'masterdata') loadMasterDataView();
+  if (viewKey === 'verifications') loadVerifications();
+  if (viewKey === 'tickets') loadTickets();
 }
 
 // ----------------------------- master data (admin) -----------------------------
@@ -391,7 +442,7 @@ async function loadMyTasks() {
 els.myFilterStatus.addEventListener('change', loadMyTasks);
 
 // ----------------------------- shared task card rendering -----------------------------
-function renderTaskList(container, tasks, { showAssignee, allowActions }) {
+function renderTaskList(container, tasks, { showAssignee, allowActions, verificationMode = false }) {
   if (!tasks || tasks.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
@@ -402,15 +453,30 @@ function renderTaskList(container, tasks, { showAssignee, allowActions }) {
   }
 
   container.innerHTML = '';
-  tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions })));
+  tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions, verificationMode })));
 }
 
-function renderTaskCard(task, { showAssignee, allowActions }) {
+function verificationBadgeHtml(task) {
+  if (task.verification_status === 'Pending Verification') {
+    return `<div class="verify-badge pending">⏳ Sent for verification to <strong>${escapeHtml(task.verifier?.full_name ?? '—')}</strong></div>`;
+  }
+  if (task.verification_status === 'Verification Rejected') {
+    return `<div class="verify-badge rejected">↩ Verification rejected${task.verification_note ? `: ${escapeHtml(task.verification_note)}` : ''}</div>`;
+  }
+  if (task.verification_status === 'Verified') {
+    return `<div class="verify-badge verified">✅ Verified by <strong>${escapeHtml(task.verifier?.full_name ?? '—')}</strong></div>`;
+  }
+  return '';
+}
+
+function renderTaskCard(task, { showAssignee, allowActions, verificationMode = false }) {
   const card = document.createElement('div');
   card.className = `task-card priority-${task.priority}`;
 
   const statusClass = task.status.replace(/\s/g, '');
   const isOwnTask = state.user.role !== 'admin' || (showAssignee === false);
+  const isActuallyMine = task.assigned_to_user?.id === state.user.id;
+  const isPendingVerification = task.verification_status === 'Pending Verification';
 
   card.innerHTML = `
     <div class="task-card-top">
@@ -419,6 +485,11 @@ function renderTaskCard(task, { showAssignee, allowActions }) {
         <div class="task-card-type">${task.task_type?.name ?? '—'} · ${task.department?.name ?? '—'}</div>
       </div>
       <span class="pill pill-${task.priority}">${task.priority}</span>
+      ${allowActions && !verificationMode ? `
+        <div class="card-menu">
+          <button type="button" class="card-menu-btn" aria-label="More options">⋮</button>
+          <div class="card-menu-list" hidden></div>
+        </div>` : ''}
     </div>
 
     <p class="task-card-desc">${escapeHtml(task.description)}</p>
@@ -432,6 +503,7 @@ function renderTaskCard(task, { showAssignee, allowActions }) {
 
     ${showAssignee ? `<div class="assigned-line">Assigned to <strong>${task.assigned_to_user?.full_name ?? '—'}</strong> by ${task.assigned_by_user?.full_name ?? '—'}</div>` : ''}
     ${task.status_note ? `<div class="assigned-line">${escapeHtml(task.status_note)}</div>` : ''}
+    ${verificationBadgeHtml(task)}
 
     <div class="task-card-footer">
       <span class="pill pill-${statusClass}">${task.status}</span>
@@ -439,12 +511,54 @@ function renderTaskCard(task, { showAssignee, allowActions }) {
     </div>
   `;
 
+  // ---- 3-dot menu wiring ----
+  if (allowActions && !verificationMode) {
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const menuList = card.querySelector('.card-menu-list');
+    const canManageThisTask = state.user.role === 'admin' || isActuallyMine;
+
+    const items = [];
+    if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
+      items.push({ label: '✅ Send for verification', onClick: () => openVerifyModal(task.id) });
+    }
+    if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
+      items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
+    }
+    items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id) });
+
+    items.forEach((item) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'card-menu-item';
+      btn.textContent = item.label;
+      btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
+      menuList.appendChild(btn);
+    });
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
+      menuList.hidden = !menuList.hidden;
+    });
+  }
+
+  // ---- footer actions ----
+  if (verificationMode) {
+    const actionsEl = card.querySelector('.task-actions');
+    actionsEl.appendChild(makeActionBtn('action-complete', 'Approve', () => verifyTask(task.id, true)));
+    actionsEl.appendChild(makeActionBtn('action-reject', 'Reject', () => {
+      const note = prompt('Reason for rejecting this verification (optional):') || '';
+      verifyTask(task.id, false, note);
+    }));
+    return card;
+  }
+
   const actionsEl = card.querySelector('.task-actions');
-  const canAct = allowActions && (state.user.role === 'admin' || isOwnTask) && task.status !== 'Completed';
+  const canAct = allowActions && (state.user.role === 'admin' || isOwnTask) && task.status !== 'Completed' && !isPendingVerification;
 
   if (canAct) {
     if (task.status === 'Pending') {
-      actionsEl.appendChild(makeActionBtn('action-start', 'Start', () => updateStatus(task.id, 'In Progress')));
+      actionsEl.appendChild(makeActionBtn('action-start', 'Accept', () => updateStatus(task.id, 'In Progress')));
       actionsEl.appendChild(makeActionBtn('action-reject', 'Reject', () => {
         const reason = prompt('Reason for rejecting this task (optional):') || '';
         updateStatus(task.id, 'Rejected', reason);
@@ -473,11 +587,189 @@ async function updateStatus(taskId, status, status_note) {
   try {
     await api(`/tasks/${taskId}/status`, { method: 'PATCH', body: { status, status_note } });
     showToast('Task updated ✅', 'success');
-    if (state.activeView === 'all') loadAllTasks();
-    else loadMyTasks();
+    reloadCurrentTaskView();
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+function reloadCurrentTaskView() {
+  if (state.activeView === 'all') loadAllTasks();
+  else if (state.activeView === 'my') loadMyTasks();
+  else if (state.activeView === 'verifications') loadVerifications();
+}
+
+// close any open 3-dot menus when clicking elsewhere on the page
+document.addEventListener('click', () => {
+  document.querySelectorAll('.card-menu-list').forEach((l) => { l.hidden = true; });
+});
+
+// ===================================================================
+// SEND FOR VERIFICATION
+// ===================================================================
+
+async function openVerifyModal(taskId) {
+  state.pendingTaskId = taskId;
+  els.verifyFormMsg.hidden = true;
+  els.verifyPerson.innerHTML = '<option value="">Loading…</option>';
+  els.verifyModal.hidden = false;
+  try {
+    const verifiers = await api('/master/verifiers');
+    fillSelect(els.verifyPerson, verifiers, { placeholder: 'Select a verifier', labelKey: 'full_name' });
+  } catch (err) {
+    els.verifyFormMsg.textContent = err.message;
+    els.verifyFormMsg.hidden = false;
+  }
+}
+els.closeVerifyModal.addEventListener('click', () => { els.verifyModal.hidden = true; });
+els.cancelVerifyModal.addEventListener('click', () => { els.verifyModal.hidden = true; });
+
+els.verifyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.verifyFormMsg.hidden = true;
+  try {
+    await api(`/tasks/${state.pendingTaskId}/send-for-verification`, {
+      method: 'PATCH',
+      body: { verifier_id: els.verifyPerson.value }
+    });
+    showToast('Sent for verification ✅', 'success');
+    els.verifyModal.hidden = true;
+    reloadCurrentTaskView();
+  } catch (err) {
+    els.verifyFormMsg.textContent = err.message;
+    els.verifyFormMsg.hidden = false;
+  }
+});
+
+async function verifyTask(taskId, approved, note) {
+  try {
+    await api(`/tasks/${taskId}/verify`, { method: 'PATCH', body: { approved, note } });
+    showToast(approved ? 'Task verified ✅' : 'Sent back to the assignee', 'success');
+    loadVerifications();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function loadVerifications() {
+  els.verificationsList.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const tasks = await api('/tasks/verifications');
+    renderTaskList(els.verificationsList, tasks, { showAssignee: true, allowActions: false, verificationMode: true });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ===================================================================
+// RESCHEDULE
+// ===================================================================
+
+function openRescheduleModal(taskId, currentTargetDate) {
+  state.pendingTaskId = taskId;
+  els.rescheduleFormMsg.hidden = true;
+  els.rescheduleDate.value = toDatetimeLocalValue(currentTargetDate);
+  els.rescheduleModal.hidden = false;
+}
+els.closeRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
+els.cancelRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
+
+els.rescheduleForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.rescheduleFormMsg.hidden = true;
+  try {
+    await api(`/tasks/${state.pendingTaskId}/reschedule`, {
+      method: 'PATCH',
+      body: { target_date: els.rescheduleDate.value }
+    });
+    showToast('Task rescheduled ✅', 'success');
+    els.rescheduleModal.hidden = true;
+    reloadCurrentTaskView();
+  } catch (err) {
+    els.rescheduleFormMsg.textContent = err.message;
+    els.rescheduleFormMsg.hidden = false;
+  }
+});
+
+// ===================================================================
+// TICKETS
+// ===================================================================
+
+function openTicketModal(taskId) {
+  state.pendingTaskId = taskId || null;
+  els.ticketFormMsg.hidden = true;
+  els.ticketDescription.value = '';
+  els.ticketModal.hidden = false;
+}
+els.openRaiseTicket.addEventListener('click', () => openTicketModal(null));
+els.closeTicketModal.addEventListener('click', () => { els.ticketModal.hidden = true; });
+els.cancelTicketModal.addEventListener('click', () => { els.ticketModal.hidden = true; });
+
+els.ticketForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.ticketFormMsg.hidden = true;
+  try {
+    await api('/tickets', {
+      method: 'POST',
+      body: { task_id: state.pendingTaskId, description: els.ticketDescription.value.trim() }
+    });
+    showToast('Ticket raised ✅', 'success');
+    els.ticketModal.hidden = true;
+    if (state.activeView === 'tickets') loadTickets();
+  } catch (err) {
+    els.ticketFormMsg.textContent = err.message;
+    els.ticketFormMsg.hidden = false;
+  }
+});
+
+async function loadTickets() {
+  els.ticketsList.innerHTML = '<div class="empty-state">Loading tickets…</div>';
+  try {
+    const tickets = await api('/tickets');
+    renderTicketsList(tickets);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderTicketsList(tickets) {
+  if (!tickets.length) {
+    els.ticketsList.innerHTML = `<div class="empty-state"><span class="emoji">🎫</span>No tickets yet</div>`;
+    return;
+  }
+  els.ticketsList.innerHTML = '';
+  tickets.forEach((ticket) => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <span class="pill ${ticket.status === 'Open' ? 'pill-Pending' : 'pill-Completed'}">${ticket.status}</span>
+        <div class="row-actions"></div>
+      </div>
+      <p class="ticket-desc">${escapeHtml(ticket.description)}</p>
+      <div class="ticket-meta">
+        Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong>
+        ${ticket.task ? ` · on task: ${escapeHtml(ticket.task.description.slice(0, 60))}${ticket.task.description.length > 60 ? '…' : ''}` : ''}
+        · ${fmtDate(ticket.created_at)}
+      </div>
+    `;
+    if (state.user.role === 'admin' && ticket.status === 'Open') {
+      const actionsCell = card.querySelector('.row-actions');
+      const resolveBtn = document.createElement('button');
+      resolveBtn.textContent = '✅ Mark resolved';
+      resolveBtn.addEventListener('click', async () => {
+        try {
+          await api(`/tickets/${ticket.id}/resolve`, { method: 'PATCH' });
+          showToast('Ticket resolved ✅', 'success');
+          loadTickets();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+      actionsCell.appendChild(resolveBtn);
+    }
+    els.ticketsList.appendChild(card);
+  });
 }
 
 // ===================================================================
@@ -485,7 +777,7 @@ async function updateStatus(taskId, status, status_note) {
 // ===================================================================
 
 async function loadEmployees() {
-  els.employeesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading employees…</td></tr>`;
+  els.employeesTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading employees…</td></tr>`;
   try {
     const employees = await api('/employees');
     renderEmployeesTable(employees);
@@ -496,7 +788,7 @@ async function loadEmployees() {
 
 function renderEmployeesTable(employees) {
   if (!employees.length) {
-    els.employeesTableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No employees yet</td></tr>`;
+    els.employeesTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No employees yet</td></tr>`;
     return;
   }
 
@@ -510,6 +802,7 @@ function renderEmployeesTable(employees) {
       <td><span class="role-pill ${emp.role}">${emp.role}</span></td>
       <td>${escapeHtml(emp.username)}</td>
       <td></td>
+      <td></td>
       <td class="row-actions"></td>
     `;
 
@@ -520,7 +813,14 @@ function renderEmployeesTable(employees) {
     statusBtn.addEventListener('click', () => toggleEmployeeStatus(emp));
     statusCell.appendChild(statusBtn);
 
-    const actionsCell = tr.children[6];
+    const verifierCell = tr.children[6];
+    const verifierBtn = document.createElement('button');
+    verifierBtn.className = `status-toggle ${emp.can_verify ? 'active' : 'inactive'}`;
+    verifierBtn.textContent = emp.can_verify ? 'Yes' : 'No';
+    verifierBtn.addEventListener('click', () => toggleEmployeeVerifier(emp));
+    verifierCell.appendChild(verifierBtn);
+
+    const actionsCell = tr.children[7];
     const resetBtn = document.createElement('button');
     resetBtn.textContent = '🔑 Reset password';
     resetBtn.addEventListener('click', () => resetEmployeePassword(emp));
@@ -536,6 +836,16 @@ async function toggleEmployeeStatus(emp) {
     showToast(`${emp.full_name} marked ${!emp.is_active ? 'active' : 'inactive'} ✅`, 'success');
     loadEmployees();
     refreshEmployeeDropdowns();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function toggleEmployeeVerifier(emp) {
+  try {
+    await api(`/employees/${emp.id}`, { method: 'PATCH', body: { can_verify: !emp.can_verify } });
+    showToast(`${emp.full_name} ${!emp.can_verify ? 'can now verify tasks' : 'is no longer a verifier'} ✅`, 'success');
+    loadEmployees();
   } catch (err) {
     showToast(err.message, 'error');
   }
