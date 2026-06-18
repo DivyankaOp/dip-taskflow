@@ -18,11 +18,13 @@ const BUCKET = 'task-files';
 const TASK_SELECT = `
   id, description, hours_to_complete, target_date, priority,
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
+  verification_status, verification_note,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
   department:departments ( id, name ),
   assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
-  assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name )
+  assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
+  verifier:users!tasks_verifier_id_fkey ( id, full_name )
 `;
 
 async function uploadFile(file, folder) {
@@ -141,6 +143,24 @@ router.get('/my', async (req, res) => {
   }
 });
 
+// ----------------------------- verification queue (for verifiers/admin) -----------------------------
+// Tasks someone has been asked to verify, that are still waiting on them.
+router.get('/verifications', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .eq('verifier_id', req.user.id)
+      .eq('verification_status', 'Pending Verification')
+      .order('target_date', { ascending: true });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('List verifications error:', err.message);
+    res.status(500).json({ error: 'Could not load verification requests' });
+  }
+});
+
 // ----------------------------- update status (the task's own assignee, or admin) -----------------------------
 router.patch('/:id/status', async (req, res) => {
   try {
@@ -185,6 +205,112 @@ router.patch('/:id/status', async (req, res) => {
   } catch (err) {
     console.error('Update status error:', err.message);
     res.status(500).json({ error: 'Could not update task' });
+  }
+});
+
+// ----------------------------- send for verification (task owner, or admin) -----------------------------
+router.patch('/:id/send-for-verification', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { verifier_id } = req.body || {};
+    if (!verifier_id) {
+      return res.status(400).json({ error: 'Please choose who should verify this task' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only send your own tasks for verification' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ verifier_id, verification_status: 'Pending Verification', verification_note: null })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Send for verification error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not send for verification' });
+  }
+});
+
+// ----------------------------- approve / reject a verification (the chosen verifier, or admin) -----------------------------
+router.patch('/:id/verify', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved, note } = req.body || {};
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, verifier_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isChosenVerifier = existing.verifier_id === req.user.id;
+    if (!isChosenVerifier && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You are not the verifier for this task' });
+    }
+
+    const updates = approved
+      ? { verification_status: 'Verified', verification_note: note || null, status: 'Completed' }
+      : { verification_status: 'Verification Rejected', verification_note: note || null, status: 'In Progress' };
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Verify task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not update verification' });
+  }
+});
+
+// ----------------------------- reschedule (only when admin allowed it for this task) -----------------------------
+router.patch('/:id/reschedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { target_date } = req.body || {};
+    if (!target_date) {
+      return res.status(400).json({ error: 'Please pick a new target date' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to, rescheduling_possible').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    if (!existing.rescheduling_possible) {
+      return res.status(403).json({ error: 'Rescheduling was not allowed for this task' });
+    }
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only reschedule your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ target_date })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reschedule error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reschedule task' });
   }
 });
 
