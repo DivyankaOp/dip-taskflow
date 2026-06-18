@@ -50,6 +50,14 @@ const els = {
   closeCredsModal: document.getElementById('closeCredsModal'),
   closeCredsModalBtn: document.getElementById('closeCredsModalBtn'),
 
+  // master data: departments & task types
+  departmentsTableBody: document.getElementById('departmentsTableBody'),
+  addDepartmentForm: document.getElementById('addDepartmentForm'),
+  addDepartmentMsg: document.getElementById('addDepartmentMsg'),
+  taskTypesTableBody: document.getElementById('taskTypesTableBody'),
+  addTaskTypeForm: document.getElementById('addTaskTypeForm'),
+  addTaskTypeMsg: document.getElementById('addTaskTypeMsg'),
+
   // sites
   sitesTableBody: document.getElementById('sitesTableBody'),
   openAddSite: document.getElementById('openAddSite'),
@@ -235,6 +243,7 @@ function buildNav() {
 
     els.navList.appendChild(makeNavButton('employees', '👥 Manage employees'));
     els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
+    els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
   }
 }
 
@@ -260,6 +269,7 @@ function switchView(viewKey) {
   if (viewKey === 'my') loadMyTasks();
   if (viewKey === 'employees') loadEmployees();
   if (viewKey === 'sites') loadSites();
+  if (viewKey === 'masterdata') loadMasterDataView();
 }
 
 // ----------------------------- master data (admin) -----------------------------
@@ -581,6 +591,68 @@ els.employeeForm.addEventListener('submit', async (e) => {
 
 els.closeCredsModal.addEventListener('click', () => { els.credsModal.hidden = true; });
 els.closeCredsModalBtn.addEventListener('click', () => { els.credsModal.hidden = true; });
+
+// ===================================================================
+// MANAGE DEPARTMENTS & TASK TYPES (admin only)
+// ===================================================================
+
+async function loadMasterDataView() {
+  try {
+    const [departments, taskTypes] = await Promise.all([
+      api('/master/departments'),
+      api('/master/task-types')
+    ]);
+    renderSimpleNameTable(els.departmentsTableBody, departments);
+    renderSimpleNameTable(els.taskTypesTableBody, taskTypes);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderSimpleNameTable(tbody, items) {
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td class="empty-state">None yet — add one above</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  items.forEach((item) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(item.name)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+els.addDepartmentForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.addDepartmentMsg.hidden = true;
+  const nameInput = document.getElementById('new-department-name');
+  try {
+    await api('/master/departments', { method: 'POST', body: { name: nameInput.value.trim() } });
+    showToast('Department added ✅', 'success');
+    nameInput.value = '';
+    loadMasterDataView();
+    loadMasterData(); // keep the Add Task / filter dropdowns in sync too
+  } catch (err) {
+    els.addDepartmentMsg.textContent = err.message;
+    els.addDepartmentMsg.hidden = false;
+  }
+});
+
+els.addTaskTypeForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.addTaskTypeMsg.hidden = true;
+  const nameInput = document.getElementById('new-tasktype-name');
+  try {
+    await api('/master/task-types', { method: 'POST', body: { name: nameInput.value.trim() } });
+    showToast('Task type added ✅', 'success');
+    nameInput.value = '';
+    loadMasterDataView();
+    loadMasterData();
+  } catch (err) {
+    els.addTaskTypeMsg.textContent = err.message;
+    els.addTaskTypeMsg.hidden = false;
+  }
+});
 
 // ===================================================================
 // MANAGE SITES (admin only)
