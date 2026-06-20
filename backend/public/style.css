@@ -340,14 +340,14 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 
 /* Column widths for All Tasks table */
 .col-sr       { width: 5%; }
-.col-details  { width: 24%; }
-.col-date     { width: 12%; }
-.col-assigned { width: 11%; }
-.col-voice    { width: 7%; text-align: center; }
-.col-attach   { width: 7%; text-align: center; }
+.col-details  { width: 30%; }
+.col-date     { width: 11%; }
+.col-assigned { width: 9%; }
+.col-voice    { width: 6%; text-align: center; }
+.col-attach   { width: 6%; text-align: center; }
 .col-priority { width: 8%; }
 .col-status   { width: 11%; }
-.col-actions  { width: 15%; }
+.col-actions  { width: 14%; }
 
 .sr-number {
   display: inline-flex; align-items: center; justify-content: center;
@@ -356,12 +356,12 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   font-size: 0.74rem; font-weight: 700; font-family: var(--font-mono);
 }
 
-.task-name-cell strong {
-  display: block; color: var(--ink); font-weight: 700;
-  font-size: 0.86rem; margin-bottom: 3px; line-height: 1.4;
+.task-detail-line {
+  font-size: 0.8rem; color: var(--ink-soft); line-height: 1.65;
 }
-.task-name-cell span {
-  font-size: 0.76rem; color: var(--muted); line-height: 1.5;
+.task-detail-line + .task-detail-line { margin-top: 1px; }
+.task-detail-label {
+  font-weight: 700; color: var(--primary-dk);
 }
 
 .media-link {
