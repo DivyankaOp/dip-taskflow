@@ -152,16 +152,15 @@
               <option value="Completed">Completed</option>
               <option value="Rejected">Rejected</option>
             </select>
+            <input type="date" id="filter-created-from" title="Created from" />
+            <input type="date" id="filter-created-to" title="Created to" />
             <button id="clearAllFilters" class="ghost-btn-text">Clear filters</button>
           </div>
+          <p id="dateRangeCount" hidden style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;"></p>
           <div id="allTasksList" class="task-list"></div>
         </section>
 
         <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
-        <!-- No filter bar here: this view always shows only the user's   -->
-        <!-- own Pending tasks. Filtering by status/department/employee   -->
-        <!-- is an admin-only capability that lives in "All delegated     -->
-        <!-- tasks" instead.                                              -->
         <section id="view-my" class="view" hidden>
           <h2 class="view-title">My tasks</h2>
           <div id="myTasksList" class="task-list"></div>
