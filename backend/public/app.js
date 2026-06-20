@@ -33,8 +33,8 @@ const els = {
   clearAllFilters: document.getElementById('clearAllFilters'),
   allTasksList: document.getElementById('allTasksList'),
   filterCreatedFrom: document.getElementById('filter-created-from'),
-  filterCreatedTo: document.getElementById('filter-created-to'),
-  dateRangeCount: document.getElementById('dateRangeCount'),
+  filterCreatedTo:   document.getElementById('filter-created-to'),
+  dateRangeCount:    document.getElementById('dateRangeCount'),
 
   // My Tasks has no filter controls anymore — it always shows the
   // current user's own Pending tasks only.
@@ -454,7 +454,35 @@ async function loadAllTasks() {
   els.allTasksList.innerHTML = '<div class="empty-state">Loading tasks…</div>';
   try {
     const query = buildAllTasksQuery();
-    const tasks = await api(`/tasks/all${query ? `?${query}` : ''}`);
+    let tasks = await api(`/tasks/all${query ? `?${query}` : ''}`);
+
+    // Default view (no status filter chosen): show only active tasks —
+    // Pending and Pending Verification. Completed / Rejected / In Progress
+    // are hidden unless the admin explicitly filters for them.
+    if (!els.filterStatus.value) {
+      tasks = tasks.filter(
+        (t) => t.status === 'Pending' || t.verification_status === 'Pending Verification'
+      );
+    }
+
+    // Date-range filter (client-side, based on created_at).
+    const from = els.filterCreatedFrom.value ? new Date(els.filterCreatedFrom.value) : null;
+    const to   = els.filterCreatedTo.value   ? new Date(els.filterCreatedTo.value + 'T23:59:59') : null;
+    if (from || to) {
+      const before = tasks.length;
+      tasks = tasks.filter((t) => {
+        const d = new Date(t.created_at);
+        if (from && d < from) return false;
+        if (to   && d > to)   return false;
+        return true;
+      });
+      const hidden = before - tasks.length;
+      els.dateRangeCount.textContent = `${tasks.length} task${tasks.length !== 1 ? 's' : ''} in range${hidden ? ` (${hidden} hidden)` : ''}`;
+      els.dateRangeCount.hidden = false;
+    } else {
+      els.dateRangeCount.hidden = true;
+    }
+
     renderTaskList(els.allTasksList, tasks, { showAssignee: true, allowActions: true });
   } catch (err) {
     showToast(err.message, 'error');
@@ -463,10 +491,16 @@ async function loadAllTasks() {
 [els.filterDepartment, els.filterEmployee, els.filterStatus].forEach((sel) =>
   sel.addEventListener('change', loadAllTasks)
 );
+[els.filterCreatedFrom, els.filterCreatedTo].forEach((inp) =>
+  inp.addEventListener('change', loadAllTasks)
+);
 els.clearAllFilters.addEventListener('click', () => {
-  els.filterDepartment.value = '';
-  els.filterEmployee.value = '';
-  els.filterStatus.value = '';
+  els.filterDepartment.value  = '';
+  els.filterEmployee.value    = '';
+  els.filterStatus.value      = '';
+  els.filterCreatedFrom.value = '';
+  els.filterCreatedTo.value   = '';
+  els.dateRangeCount.hidden   = true;
   loadAllTasks();
 });
 
@@ -602,7 +636,10 @@ function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
       updateStatus(task.id, 'Rejected', reason);
     }));
   }
-  if (task.status === 'In Progress') {
+  // Only admins can mark a task directly as Completed.
+  // Employees finish a task by sending it for verification instead
+  // (via the ⋮ menu → "Send for verification").
+  if (task.status === 'In Progress' && state.user.role === 'admin') {
     buttons.push(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
   }
   if (task.status === 'Rejected') {
@@ -661,7 +698,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     <p class="task-card-desc">${escapeHtml(task.description)}</p>
 
     <div class="task-meta">
-      <span>Due <strong>${fmtDeadlineWithHours(task.target_date, task.hours_to_complete)}</strong></span>
+      <span>Due <strong>${getDeadlineHtml(task, showAssignee)}</strong></span>
       ${task.attachment_url ? `<a class="attachment-link" href="${task.attachment_url}" target="_blank" rel="noopener">📎 Attachment</a>` : ''}
       ${task.voice_note_url ? `<a class="attachment-link" href="${task.voice_note_url}" target="_blank" rel="noopener">🎤 Voice note</a>` : ''}
     </div>
@@ -723,7 +760,7 @@ function renderTaskRow(task, { showAssignee, allowActions }) {
     <td>${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</td>
     ${showAssignee ? `<td>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</td>` : ''}
     <td><span class="pill pill-${task.priority}">${task.priority}</span></td>
-    <td>${fmtDeadlineWithHours(task.target_date, task.hours_to_complete)}</td>
+    <td>${getDeadlineHtml(task, showAssignee)}</td>
     <td>
       <span class="pill pill-${statusClass}">${task.status}</span>
       ${verificationBadgeHtml(task)}
