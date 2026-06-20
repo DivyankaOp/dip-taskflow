@@ -158,17 +158,12 @@
         </section>
 
         <!-- ----- My Tasks (everyone — admin's own + employees) ----- -->
+        <!-- No filter bar here: this view always shows only the user's   -->
+        <!-- own Pending tasks. Filtering by status/department/employee   -->
+        <!-- is an admin-only capability that lives in "All delegated     -->
+        <!-- tasks" instead.                                              -->
         <section id="view-my" class="view" hidden>
           <h2 class="view-title">My tasks</h2>
-          <div class="filter-bar">
-            <select id="my-filter-status">
-              <option value="">All statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="Rejected">Rejected</option>
-            </select>
-          </div>
           <div id="myTasksList" class="task-list"></div>
         </section>
 
