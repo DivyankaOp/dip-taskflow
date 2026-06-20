@@ -541,7 +541,7 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
     container.innerHTML = `<div class="empty-state"><span class="emoji">📭</span>No tasks found</div>`;
     return;
   }
-  container.className = 'task-list';
+  container.classList.add('task-list');
   container.innerHTML = '';
   tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions, verificationMode })));
 }
