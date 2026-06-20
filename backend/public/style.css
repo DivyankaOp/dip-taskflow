@@ -299,6 +299,16 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 }
 .table-scroll { overflow-x: auto; }
 
+/* Desktop = table, mobile = cards (used for "All delegated tasks"), so
+   nobody has to deal with a cramped, side-scrolling table on a phone. */
+.view-mobile-only.view-mobile-only { display: none; }
+@media (max-width: 768px) {
+  .view-desktop-only.view-desktop-only { display: none; }
+  .view-mobile-only.view-mobile-only { display: flex; }
+}
+
+.perm-col { text-align: center; }
+
 .data-table {
   width: 100%; border-collapse: collapse;
   font-size: 0.83rem;
