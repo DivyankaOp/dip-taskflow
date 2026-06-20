@@ -35,6 +35,7 @@ const els = {
   dateRangeCount:    document.getElementById('dateRangeCount'),
 
   myTasksList: document.getElementById('myTasksList'),
+  myTasksTableBody: document.getElementById('myTasksTableBody'),
 
   employeesTableBody: document.getElementById('employeesTableBody'),
   employeesCards: document.getElementById('employeesCards'),
@@ -441,7 +442,7 @@ els.clearAllFilters.addEventListener('click', () => {
   loadAllTasks();
 });
 
-// ── NEW: renders the admin "All delegated tasks" as the requested table format
+// renders the admin "All delegated tasks" as a table (desktop)
 function renderAllTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
@@ -526,14 +527,96 @@ function renderAllTasksTable(tbody, tasks) {
 
 // ─── My Tasks ────────────────────────────────────────────────────────────────
 async function loadMyTasks() {
+  els.myTasksTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading tasks…</td></tr>`;
   els.myTasksList.innerHTML = '<div class="empty-state">Loading tasks…</div>';
   try {
     const allTasks = await api('/tasks/my');
     const visibleTasks = allTasks.filter(
       (task) => task.status !== 'Completed' && task.status !== 'Rejected'
     );
+    renderMyTasksTable(els.myTasksTableBody, visibleTasks);
     renderTaskList(els.myTasksList, visibleTasks, { showAssignee: false, allowActions: true });
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// renders "My tasks" as a table (desktop). Same columns as All Tasks, minus
+// "Assigned to" (it's always you), since this is the employee's own task list.
+function renderMyTasksTable(tbody, tasks) {
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const tr = document.createElement('tr');
+    const statusClass = task.status.replace(/\s/g, '');
+
+    // Sr No
+    const tdSr = document.createElement('td');
+    tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
+
+    // Task details
+    const tdDetails = document.createElement('td');
+    tdDetails.className = 'task-name-cell';
+    tdDetails.innerHTML = `
+      <strong>${escapeHtml(task.description.length > 80 ? task.description.slice(0,80)+'…' : task.description)}</strong>
+      <span>${escapeHtml(task.project?.name ?? '—')} · ${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</span>
+    `;
+
+    // Due date (calculated from created_at + hours, same as the card view)
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.textContent = getDeadlineHtml(task, false);
+
+    // Voice note
+    const tdVoice = document.createElement('td');
+    tdVoice.style.textAlign = 'center';
+    if (task.voice_note_url) {
+      const a = document.createElement('a');
+      a.href = task.voice_note_url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'media-link'; a.title = 'Play voice note'; a.textContent = '🎤';
+      tdVoice.appendChild(a);
+    } else {
+      tdVoice.innerHTML = `<span class="media-none">—</span>`;
+    }
+
+    // Attachment
+    const tdAttach = document.createElement('td');
+    tdAttach.style.textAlign = 'center';
+    if (task.attachment_url) {
+      const a = document.createElement('a');
+      a.href = task.attachment_url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'media-link'; a.title = 'View attachment'; a.textContent = '📎';
+      tdAttach.appendChild(a);
+    } else {
+      tdAttach.innerHTML = `<span class="media-none">—</span>`;
+    }
+
+    // Priority
+    const tdPriority = document.createElement('td');
+    tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
+
+    // Status (with verification badge if applicable)
+    const tdStatus = document.createElement('td');
+    let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
+    if (task.verification_status === 'Pending Verification') {
+      statusHtml += `<br><span class="pill pill-PendingVerification" style="margin-top:4px">⏳ Verifying</span>`;
+    } else if (task.verification_status === 'Verified') {
+      statusHtml += `<br><span class="pill pill-Completed" style="margin-top:4px">✅ Verified</span>`;
+    } else if (task.verification_status === 'Verification Rejected') {
+      statusHtml += `<br><span class="pill pill-Rejected" style="margin-top:4px">↩ Rej.</span>`;
+    }
+    tdStatus.innerHTML = statusHtml;
+
+    // Actions
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    buildPrimaryStatusButtons(task, { showAssignee: false, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
+    tdActions.appendChild(buildCardMenuElement(task, { showAssignee: false }));
+
+    tr.append(tdSr, tdDetails, tdDate, tdVoice, tdAttach, tdPriority, tdStatus, tdActions);
+    tbody.appendChild(tr);
+  });
 }
 
 // ─── shared task card rendering (My Tasks / Verifications) ───────────────────
@@ -912,7 +995,7 @@ function renderEmployeesTable(employees) {
   });
 }
 
-// ── NEW: renders the "Manage employees" view as cards (shown on mobile)
+// renders the "Manage employees" view as cards (shown on mobile)
 function renderEmployeesCards(employees) {
   if (!employees.length) {
     els.employeesCards.innerHTML = `<div class="empty-state"><span class="emoji">👥</span>No employees yet</div>`;
