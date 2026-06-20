@@ -299,10 +299,11 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 }
 .table-scroll { overflow-x: auto; }
 
-/* Desktop = table, mobile = cards (used for "All delegated tasks" and
-   "Manage employees"), so nobody has to deal with a cramped,
-   side-scrolling table on a phone. !important guards against any other
-   display rule (e.g. .employee-card-list, .task-list) winning the fight. */
+/* Desktop = table, mobile = cards (used for "All delegated tasks",
+   "My tasks", and "Manage employees"), so nobody has to deal with a
+   cramped, side-scrolling table on a phone. !important guards against
+   any other display rule (e.g. .employee-card-list, .task-list)
+   winning the fight. */
 .view-mobile-only { display: none !important; }
 .view-desktop-only { display: block !important; }
 @media (max-width: 768px) {
