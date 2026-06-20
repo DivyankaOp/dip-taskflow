@@ -241,8 +241,8 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
    MAIN CONTENT
    ================================================================ */
 .main-content {
-  flex: 1; padding: 26px 28px 52px;
-  min-width: 0; max-width: 1200px;
+  flex: 1 1 auto; padding: 26px 28px 52px;
+  min-width: 0; max-width: 1200px; width: 100%;
 }
 .view[hidden] { display: none; }
 
@@ -296,8 +296,11 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .table-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--sh-sm);
+  max-width: 100%;
 }
-.table-scroll { overflow-x: auto; }
+.table-scroll {
+  max-width: 100%;
+}
 
 /* Desktop = table, mobile = cards (used for "All delegated tasks",
    "My tasks", and "Manage employees"), so nobody has to deal with a
@@ -314,7 +317,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .perm-col { text-align: center; }
 
 .data-table {
-  width: 100%; border-collapse: collapse;
+  width: 100%; border-collapse: collapse; table-layout: fixed;
   font-size: 0.83rem;
 }
 .data-table thead { position: sticky; top: 0; z-index: 2; }
@@ -324,26 +327,26 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   color: var(--muted); font-size: 0.67rem;
   text-transform: uppercase; letter-spacing: .06em;
   font-weight: 700; border-bottom: 1.5px solid var(--border);
-  white-space: nowrap;
 }
 .data-table td {
   padding: 13px 16px; border-bottom: 1px solid var(--border-soft);
   vertical-align: middle; color: var(--ink-soft);
+  word-wrap: break-word; overflow-wrap: break-word;
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background .12s; }
 .data-table tbody tr:hover td { background: #F5F6FF; }
 
 /* Column widths for All Tasks table */
-.col-sr       { width: 56px; }
-.col-details  { min-width: 220px; }
-.col-date     { min-width: 140px; white-space: nowrap; }
-.col-assigned { min-width: 130px; }
-.col-voice    { width: 100px; text-align: center; }
-.col-attach   { width: 110px; text-align: center; }
-.col-priority { width: 90px; }
-.col-status   { min-width: 140px; }
-.col-actions  { min-width: 160px; }
+.col-sr       { width: 5%; }
+.col-details  { width: 24%; }
+.col-date     { width: 12%; }
+.col-assigned { width: 11%; }
+.col-voice    { width: 7%; text-align: center; }
+.col-attach   { width: 7%; text-align: center; }
+.col-priority { width: 8%; }
+.col-status   { width: 11%; }
+.col-actions  { width: 15%; }
 
 .sr-number {
   display: inline-flex; align-items: center; justify-content: center;
