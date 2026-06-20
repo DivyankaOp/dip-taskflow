@@ -1,8 +1,7 @@
 -- =====================================================================
 -- TaskFlow / DIP Projects schema
 -- Run this whole file once in Supabase → SQL Editor → New query → Run.
--- (Reflects the live, reset schema as of this version — includes the
--- verification + tickets feature additions.)
+-- (Fresh install schema — includes verification, tickets, and corrections.)
 -- =====================================================================
 
 create extension if not exists pgcrypto;
@@ -65,9 +64,13 @@ create table if not exists tasks (
   voice_note_url text,
   status text not null default 'Pending' check (status in ('Pending', 'In Progress', 'Completed', 'Rejected')),
   status_note text,
+  accepted_at timestamptz,
+  rejected_at timestamptz,
   verifier_id uuid references users(id),
   verification_status text check (verification_status in ('Pending Verification', 'Verified', 'Verification Rejected')),
   verification_note text,
+  verification_attachment_urls text[],
+  correction_voice_url text,
   created_at timestamptz not null default now()
 );
 
@@ -78,6 +81,7 @@ create table if not exists tasks (
 
 create index if not exists idx_tasks_assigned_to on tasks(assigned_to);
 create index if not exists idx_tasks_status on tasks(status);
+create index if not exists idx_tasks_verification_status on tasks(verification_status);
 
 -- ============ TICKETS ============
 create table if not exists tickets (
@@ -96,13 +100,20 @@ values ('task-files', 'task-files', true)
 on conflict (id) do nothing;
 
 -- ============ ROW LEVEL SECURITY ============
--- The backend talks to Supabase using the service_role key, which bypasses
--- RLS entirely — so the app works fine without any policies. We still turn
--- RLS on as a safety net in case the anon/public key is ever used directly
--- from a browser; with RLS on and no policies, that key gets zero access.
 alter table users enable row level security;
 alter table departments enable row level security;
 alter table projects enable row level security;
 alter table task_types enable row level security;
 alter table tasks enable row level security;
 alter table tickets enable row level security;
+
+
+-- =====================================================================
+-- MIGRATION (run these on existing databases that already have tasks table)
+-- In Supabase → SQL Editor → New query → paste and run one at a time
+-- =====================================================================
+
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejected_at timestamptz;
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verification_attachment_urls text[];
+-- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS correction_voice_url text;
