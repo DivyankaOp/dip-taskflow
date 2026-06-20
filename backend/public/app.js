@@ -33,7 +33,8 @@ const els = {
   clearAllFilters: document.getElementById('clearAllFilters'),
   allTasksList: document.getElementById('allTasksList'),
 
-  myFilterStatus: document.getElementById('my-filter-status'),
+  // My Tasks has no filter controls anymore — it always shows the
+  // current user's own Pending tasks only.
   myTasksList: document.getElementById('myTasksList'),
 
   // employees
@@ -172,6 +173,15 @@ function fmtDateOnly(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// Combined "deadline" string: date + time + hours-to-complete together,
+// e.g. "19 Jun 2026, 4:30 PM · 6h to complete" — this is what the deadline
+// column/line shows everywhere now, instead of two separate fields.
+function fmtDeadlineWithHours(iso, hours) {
+  const dateStr = fmtDate(iso);
+  const hoursStr = (hours ?? hours === 0) ? `${hours}h to complete` : null;
+  return hoursStr ? `${dateStr} · ${hoursStr}` : dateStr;
 }
 
 function toDatetimeLocalValue(iso) {
@@ -437,17 +447,19 @@ els.clearAllFilters.addEventListener('click', () => {
 });
 
 // ----------------------------- My Tasks (everyone) -----------------------------
+// "My Tasks" always shows only the current user's Pending tasks — there is
+// no filter control for employees, and rejected/in-progress/completed tasks
+// are intentionally excluded here so the page only ever shows what's
+// waiting on the user to start.
 async function loadMyTasks() {
   els.myTasksList.innerHTML = '<div class="empty-state">Loading tasks…</div>';
   try {
-    const status = els.myFilterStatus.value;
-    const tasks = await api(`/tasks/my${status ? `?status=${status}` : ''}`);
+    const tasks = await api('/tasks/my?status=Pending');
     renderTaskList(els.myTasksList, tasks, { showAssignee: false, allowActions: true });
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
-els.myFilterStatus.addEventListener('change', loadMyTasks);
 
 // ----------------------------- shared task card rendering -----------------------------
 function renderTaskList(container, tasks, { showAssignee, allowActions, verificationMode = false }) {
@@ -610,8 +622,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     <p class="task-card-desc">${escapeHtml(task.description)}</p>
 
     <div class="task-meta">
-      <span><strong>${task.hours_to_complete ?? 0}h</strong> to complete</span>
-      <span>Due <strong>${fmtDate(task.target_date)}</strong></span>
+      <span>Due <strong>${fmtDeadlineWithHours(task.target_date, task.hours_to_complete)}</strong></span>
       ${task.attachment_url ? `<a class="attachment-link" href="${task.attachment_url}" target="_blank" rel="noopener">📎 Attachment</a>` : ''}
       ${task.voice_note_url ? `<a class="attachment-link" href="${task.voice_note_url}" target="_blank" rel="noopener">🎤 Voice note</a>` : ''}
     </div>
@@ -654,7 +665,7 @@ function renderTaskTable(tasks, { showAssignee, allowActions }) {
       <tr>
         <th>Project</th><th>Type / Dept</th>
         ${showAssignee ? '<th>Assigned to</th>' : ''}
-        <th>Priority</th><th>Due date</th><th>Status</th><th>Actions</th>
+        <th>Priority</th><th>Deadline</th><th>Status</th><th>Actions</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -673,7 +684,7 @@ function renderTaskRow(task, { showAssignee, allowActions }) {
     <td>${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</td>
     ${showAssignee ? `<td>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</td>` : ''}
     <td><span class="pill pill-${task.priority}">${task.priority}</span></td>
-    <td>${fmtDate(task.target_date)}</td>
+    <td>${fmtDeadlineWithHours(task.target_date, task.hours_to_complete)}</td>
     <td>
       <span class="pill pill-${statusClass}">${task.status}</span>
       ${verificationBadgeHtml(task)}
