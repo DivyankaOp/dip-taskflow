@@ -49,6 +49,23 @@ const els = {
   closeCredsModal: document.getElementById('closeCredsModal'),
   closeCredsModalBtn: document.getElementById('closeCredsModalBtn'),
 
+  editEmployeeModal: document.getElementById('editEmployeeModal'),
+  editEmployeeForm: document.getElementById('editEmployeeForm'),
+  editEmployeeFormMsg: document.getElementById('editEmployeeFormMsg'),
+  closeEditEmployeeModal: document.getElementById('closeEditEmployeeModal'),
+  cancelEditEmployeeModal: document.getElementById('cancelEditEmployeeModal'),
+  editEmpId: document.getElementById('edit-emp-id'),
+  editEmpFullname: document.getElementById('edit-emp-fullname'),
+  editEmpDepartment: document.getElementById('edit-emp-department'),
+  editEmpDesignation: document.getElementById('edit-emp-designation'),
+  editEmpRole: document.getElementById('edit-emp-role'),
+  editEmpPassword: document.getElementById('edit-emp-password'),
+  toggleEditPassword: document.getElementById('toggleEditPassword'),
+
+  permissionsTableBody: document.getElementById('permissionsTableBody'),
+
+  allTasksCards: document.getElementById('allTasksCards'),
+
   departmentsTableBody: document.getElementById('departmentsTableBody'),
   addDepartmentForm: document.getElementById('addDepartmentForm'),
   addDepartmentMsg: document.getElementById('addDepartmentMsg'),
@@ -242,6 +259,10 @@ async function enterApp() {
 
 function buildNav() {
   const isAdmin = state.user.role === 'admin';
+  const canAddSite = isAdmin || !!state.user.can_add_site;
+  const canAddEmployee = isAdmin || !!state.user.can_add_employee;
+  const canResolveTickets = isAdmin || !!state.user.can_resolve_tickets;
+
   const taskItems = isAdmin
     ? [{ key:'add', label:'➕ Add new task' }, { key:'all', label:'📋 All delegated tasks' }, { key:'my', label:'✅ My tasks' }]
     : [{ key:'my', label:'✅ My tasks' }];
@@ -252,13 +273,16 @@ function buildNav() {
   els.navList.appendChild(taskLabel);
   taskItems.forEach((t) => els.navList.appendChild(makeNavButton(t.key, t.label)));
 
-  if (isAdmin) {
+  if (isAdmin || canAddEmployee || canAddSite) {
     const adminLabel = document.createElement('div');
     adminLabel.className = 'nav-section-label'; adminLabel.textContent = 'Administration';
     els.navList.appendChild(adminLabel);
-    els.navList.appendChild(makeNavButton('employees', '👥 Manage employees'));
-    els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
-    els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
+    if (isAdmin || canAddEmployee) els.navList.appendChild(makeNavButton('employees', '👥 Manage employees'));
+    if (isAdmin || canAddSite)     els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
+    if (isAdmin) {
+      els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
+      els.navList.appendChild(makeNavButton('permissions', '🔐 Permissions'));
+    }
   }
 
   if (isAdmin || state.user.can_verify) {
@@ -293,6 +317,7 @@ function switchView(viewKey) {
   if (viewKey === 'employees')     loadEmployees();
   if (viewKey === 'sites')         loadSites();
   if (viewKey === 'masterdata')    loadMasterDataView();
+  if (viewKey === 'permissions')   loadPermissions();
   if (viewKey === 'verifications') loadVerifications();
   if (viewKey === 'tickets')       loadTickets();
 }
@@ -369,6 +394,7 @@ function buildAllTasksQuery() {
 async function loadAllTasks() {
   const tbody = els.allTasksList;
   tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Loading tasks…</td></tr>`;
+  els.allTasksCards.innerHTML = `<div class="empty-state">Loading tasks…</div>`;
   try {
     const query = buildAllTasksQuery();
     let tasks = await api(`/tasks/all${query ? `?${query}` : ''}`);
@@ -397,6 +423,7 @@ async function loadAllTasks() {
     }
 
     renderAllTasksTable(tbody, tasks);
+    renderTaskList(els.allTasksCards, tasks, { showAssignee: true, allowActions: true });
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -866,6 +893,12 @@ function renderEmployeesTable(employees) {
     verifierCell.appendChild(verifierBtn);
 
     const actionsCell = tr.children[7];
+    const editBtn = document.createElement('button');
+    editBtn.className = 'action-btn action-start';
+    editBtn.textContent = '✏️ Edit';
+    editBtn.addEventListener('click', () => openEditEmployeeModal(emp));
+    actionsCell.appendChild(editBtn);
+
     const resetBtn = document.createElement('button');
     resetBtn.className = 'action-btn action-start';
     resetBtn.textContent = '🔑 Reset password';
@@ -922,6 +955,101 @@ els.employeeForm.addEventListener('submit', async (e) => {
 });
 els.closeCredsModal.addEventListener('click', () => { els.credsModal.hidden = true; });
 els.closeCredsModalBtn.addEventListener('click', () => { els.credsModal.hidden = true; });
+
+// ─── Edit employee (designation + role + department + optional new password) ─
+function openEditEmployeeModal(emp) {
+  els.editEmployeeFormMsg.hidden = true;
+  els.editEmpId.value = emp.id;
+  els.editEmpFullname.value = emp.full_name || '';
+  els.editEmpDepartment.value = emp.department || '';
+  els.editEmpDesignation.value = emp.designation || '';
+  els.editEmpRole.value = emp.role || 'employee';
+  els.editEmpPassword.value = '';
+  els.editEmployeeModal.hidden = false;
+}
+els.closeEditEmployeeModal.addEventListener('click', () => { els.editEmployeeModal.hidden = true; });
+els.cancelEditEmployeeModal.addEventListener('click', () => { els.editEmployeeModal.hidden = true; });
+els.toggleEditPassword.addEventListener('click', () => {
+  const isPw = els.editEmpPassword.type === 'password';
+  els.editEmpPassword.type = isPw ? 'text' : 'password';
+  els.toggleEditPassword.textContent = isPw ? '🙈' : '👁';
+});
+els.editEmployeeForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.editEmployeeFormMsg.hidden = true;
+  const newPassword = els.editEmpPassword.value;
+  if (newPassword && newPassword.length < 6) {
+    els.editEmployeeFormMsg.textContent = 'Password must be at least 6 characters';
+    els.editEmployeeFormMsg.hidden = false;
+    return;
+  }
+  const body = {
+    full_name:   els.editEmpFullname.value.trim(),
+    department:  els.editEmpDepartment.value.trim(),
+    designation: els.editEmpDesignation.value.trim(),
+    role:        els.editEmpRole.value
+  };
+  if (newPassword) body.new_password = newPassword;
+  try {
+    await api(`/employees/${els.editEmpId.value}`, { method: 'PATCH', body });
+    showToast('Employee updated ✅', 'success');
+    els.editEmployeeModal.hidden = true;
+    loadEmployees(); refreshEmployeeDropdowns();
+  } catch (err) { els.editEmployeeFormMsg.textContent = err.message; els.editEmployeeFormMsg.hidden = false; }
+});
+
+// ─── Permissions (admin only) ──────────────────────────────────────────────────
+async function loadPermissions() {
+  els.permissionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading employees…</td></tr>`;
+  try {
+    const employees = await api('/employees');
+    renderPermissionsTable(employees);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+function renderPermissionsTable(employees) {
+  if (!employees.length) {
+    els.permissionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">No employees yet</td></tr>`;
+    return;
+  }
+  els.permissionsTableBody.innerHTML = '';
+  employees.forEach((emp) => {
+    const tr = document.createElement('tr');
+    const isAdminRow = emp.role === 'admin';
+    tr.innerHTML = `
+      <td><strong style="font-weight:600">${escapeHtml(emp.full_name)}</strong></td>
+      <td><span class="role-pill ${emp.role}">${emp.role}</span></td>
+    `;
+    const flags = [
+      ['can_add_site', 'Add site'],
+      ['can_add_employee', 'Add employee'],
+      ['can_resolve_tickets', 'Resolve tickets'],
+      ['can_verify', 'Verify tasks']
+    ];
+    flags.forEach(([flag, label]) => {
+      const td = document.createElement('td');
+      td.className = 'perm-col';
+      const btn = document.createElement('button');
+      const checked = isAdminRow || !!emp[flag];
+      btn.className = `status-toggle ${checked ? 'active' : 'inactive'}`;
+      btn.textContent = checked ? 'Yes' : 'No';
+      btn.title = isAdminRow ? 'Admins already have full access' : `Toggle "${label}" for ${emp.full_name}`;
+      if (isAdminRow) {
+        btn.disabled = true;
+      } else {
+        btn.addEventListener('click', () => togglePermission(emp, flag));
+      }
+      td.appendChild(btn);
+      tr.appendChild(td);
+    });
+    els.permissionsTableBody.appendChild(tr);
+  });
+}
+async function togglePermission(emp, flag) {
+  try {
+    await api(`/employees/${emp.id}`, { method: 'PATCH', body: { [flag]: !emp[flag] } });
+    showToast(`Permission updated for ${emp.full_name} ✅`, 'success');
+    loadPermissions();
+  } catch (err) { showToast(err.message, 'error'); }
+}
 
 // ─── Master data ──────────────────────────────────────────────────────────────
 async function loadMasterDataView() {
