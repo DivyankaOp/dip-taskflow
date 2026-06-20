@@ -32,6 +32,9 @@ const els = {
   filterStatus: document.getElementById('filter-status'),
   clearAllFilters: document.getElementById('clearAllFilters'),
   allTasksList: document.getElementById('allTasksList'),
+  filterCreatedFrom: document.getElementById('filter-created-from'),
+  filterCreatedTo: document.getElementById('filter-created-to'),
+  dateRangeCount: document.getElementById('dateRangeCount'),
 
   // My Tasks has no filter controls anymore — it always shows the
   // current user's own Pending tasks only.
@@ -176,12 +179,33 @@ function fmtDateOnly(iso) {
 }
 
 // Combined "deadline" string: date + time + hours-to-complete together,
-// e.g. "19 Jun 2026, 4:30 PM · 6h to complete" — this is what the deadline
-// column/line shows everywhere now, instead of two separate fields.
+// e.g. "19 Jun 2026, 4:30 PM · 6h to complete". Used in the ADMIN view —
+// shows the exact target_date the admin chose when creating the task.
 function fmtDeadlineWithHours(iso, hours) {
   const dateStr = fmtDate(iso);
   const hoursStr = (hours ?? hours === 0) ? `${hours}h to complete` : null;
   return hoursStr ? `${dateStr} · ${hoursStr}` : dateStr;
+}
+
+// Admin's "All delegated tasks" deadline column: date only (no time), since
+// the admin just needs to see which day a task is due, not the minute.
+function fmtDeadlineDateOnlyWithHours(iso, hours) {
+  const dateStr = fmtDateOnly(iso);
+  const hoursStr = (hours ?? hours === 0) ? `${hours}h to complete` : null;
+  return hoursStr ? `${dateStr} · ${hoursStr}` : dateStr;
+}
+
+// Employee's "My Tasks" deadline: calculated as (task creation time +
+// hours_to_complete), NOT the admin's chosen target_date. E.g. a task
+// created at 4:49 PM with "1h to complete" shows a deadline of 5:49 PM
+// the same day — this is what the employee actually needs to hit.
+function fmtCalculatedDeadline(createdAtIso, hours) {
+  if (!createdAtIso) return '—';
+  const created = new Date(createdAtIso);
+  const h = Number(hours) || 0;
+  const deadline = new Date(created.getTime() + h * 60 * 60 * 1000);
+  const dateStr = fmtDate(deadline.toISOString());
+  return (hours ?? hours === 0) ? `${dateStr} · ${hours}h to complete` : dateStr;
 }
 
 function toDatetimeLocalValue(iso) {
@@ -498,6 +522,16 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
 
   container.appendChild(mobileWrap);
   container.appendChild(desktopWrap);
+}
+
+// Deadline display differs by audience: the admin's "All delegated tasks"
+// (showAssignee: true) shows the exact target_date the admin chose, date
+// only. The employee's "My Tasks" (showAssignee: false) shows a calculated
+// deadline = task creation time + hours_to_complete, with time included.
+function getDeadlineHtml(task, showAssignee) {
+  return showAssignee
+    ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
+    : fmtCalculatedDeadline(task.created_at, task.hours_to_complete);
 }
 
 function verificationBadgeHtml(task) {
