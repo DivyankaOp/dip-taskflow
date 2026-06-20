@@ -175,7 +175,7 @@
             <p id="dateRangeCount" hidden class="range-count"></p>
           </div>
 
-          <div class="table-card">
+          <div class="table-card view-desktop-only">
             <div class="table-scroll">
               <table class="data-table" id="allTasksTable">
                 <thead>
@@ -195,6 +195,7 @@
               </table>
             </div>
           </div>
+          <div id="allTasksCards" class="task-list view-mobile-only"></div>
         </section>
 
         <!-- MY TASKS -->
@@ -298,6 +299,31 @@
           </div>
         </section>
 
+        <!-- PERMISSIONS -->
+        <section id="view-permissions" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">Permissions</h2>
+            <p class="view-sub">Decide what each employee is allowed to do, without making them a full admin.</p>
+          </div>
+          <div class="table-card">
+            <div class="table-scroll">
+              <table class="data-table" id="permissionsTable">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th class="perm-col">Add site</th>
+                    <th class="perm-col">Add employee</th>
+                    <th class="perm-col">Resolve tickets</th>
+                    <th class="perm-col">Verify tasks</th>
+                  </tr>
+                </thead>
+                <tbody id="permissionsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- VERIFICATIONS -->
         <section id="view-verifications" class="view" hidden>
           <div class="view-heading">
@@ -356,6 +382,50 @@
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelEmployeeModal">Cancel</button>
           <button type="submit" class="primary-btn primary-btn-inline">Add employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Employee Modal -->
+  <div id="editEmployeeModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Edit employee</h3>
+        <button class="modal-close" id="closeEditEmployeeModal">&times;</button>
+      </div>
+      <form id="editEmployeeForm" class="modal-body">
+        <input type="hidden" id="edit-emp-id" />
+        <div class="field">
+          <label for="edit-emp-fullname">Full name <span class="req">*</span></label>
+          <input id="edit-emp-fullname" type="text" required />
+        </div>
+        <div class="field">
+          <label for="edit-emp-department">Department <span class="req">*</span></label>
+          <input id="edit-emp-department" type="text" required />
+        </div>
+        <div class="field">
+          <label for="edit-emp-designation">Designation <span class="req">*</span></label>
+          <input id="edit-emp-designation" type="text" required />
+        </div>
+        <div class="field">
+          <label for="edit-emp-role">Role <span class="req">*</span></label>
+          <select id="edit-emp-role" required>
+            <option value="employee">Employee</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="edit-emp-password">New password <span class="optional">(leave blank to keep current)</span></label>
+          <div class="password-field">
+            <input id="edit-emp-password" type="password" placeholder="Set a new password" minlength="6" autocomplete="new-password" />
+            <button type="button" id="toggleEditPassword" class="ghost-btn" aria-label="Show password">👁</button>
+          </div>
+        </div>
+        <p id="editEmployeeFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelEditEmployeeModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Save changes</button>
         </div>
       </form>
     </div>
