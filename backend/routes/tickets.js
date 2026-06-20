@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../lib/supabaseClient');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -39,11 +40,19 @@ router.post('/', async (req, res) => {
 });
 
 // ----------------------------- list tickets -----------------------------
-// Admin sees every ticket; everyone else sees only their own.
+// Admin (or anyone with can_resolve_tickets) sees every ticket; everyone else sees only their own.
 router.get('/', async (req, res) => {
   try {
+    let seeAll = req.user.role === 'admin';
+    if (!seeAll) {
+      const { data: me, error: meErr } = await supabase
+        .from('users').select('can_resolve_tickets').eq('id', req.user.id).maybeSingle();
+      if (meErr) throw meErr;
+      seeAll = !!me?.can_resolve_tickets;
+    }
+
     let query = supabase.from('tickets').select(TICKET_SELECT).order('created_at', { ascending: false });
-    if (req.user.role !== 'admin') {
+    if (!seeAll) {
       query = query.eq('raised_by', req.user.id);
     }
     const { data, error } = await query;
@@ -55,8 +64,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ----------------------------- resolve a ticket (admin only) -----------------------------
-router.patch('/:id/resolve', requireAdmin, async (req, res) => {
+// ----------------------------- resolve a ticket (admin, or anyone with can_resolve_tickets) -----------------------------
+router.patch('/:id/resolve', requirePermission('can_resolve_tickets'), async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('tickets')
