@@ -301,11 +301,13 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 
 /* Desktop = table, mobile = cards (used for "All delegated tasks" and
    "Manage employees"), so nobody has to deal with a cramped,
-   side-scrolling table on a phone. */
-.view-mobile-only.view-mobile-only { display: none; }
+   side-scrolling table on a phone. !important guards against any other
+   display rule (e.g. .employee-card-list, .task-list) winning the fight. */
+.view-mobile-only { display: none !important; }
+.view-desktop-only { display: block !important; }
 @media (max-width: 768px) {
-  .view-desktop-only.view-desktop-only { display: none; }
-  .view-mobile-only.view-mobile-only { display: flex; }
+  .view-desktop-only { display: none !important; }
+  .view-mobile-only { display: flex !important; }
 }
 
 .perm-col { text-align: center; }
