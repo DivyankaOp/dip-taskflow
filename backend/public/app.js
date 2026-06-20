@@ -201,6 +201,22 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Builds the "Project: / Task Type: / Details: [/ Assigned to:]" block used
+// in the Task Details column of both the All Tasks and My Tasks tables.
+function buildTaskDetailsHtml(task, { showAssignee = false } = {}) {
+  const desc = task.description ?? '';
+  const shortDesc = desc.length > 100 ? desc.slice(0, 100) + '…' : desc;
+  let html = `
+    <div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project?.name ?? '—')}</div>
+    <div class="task-detail-line"><span class="task-detail-label">Task Type:</span> ${escapeHtml(task.task_type?.name ?? '—')}</div>
+    <div class="task-detail-line"><span class="task-detail-label">Details:</span> ${escapeHtml(shortDesc)}</div>
+  `;
+  if (showAssignee) {
+    html += `<div class="task-detail-line"><span class="task-detail-label">Assigned to:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>`;
+  }
+  return html;
+}
+
 // ─── auth ────────────────────────────────────────────────────────────────────
 els.togglePassword.addEventListener('click', () => {
   const isPw = els.passwordInput.type === 'password';
@@ -460,10 +476,7 @@ function renderAllTasksTable(tbody, tasks) {
     // Task details
     const tdDetails = document.createElement('td');
     tdDetails.className = 'task-name-cell';
-    tdDetails.innerHTML = `
-      <strong>${escapeHtml(task.description.length > 80 ? task.description.slice(0,80)+'…' : task.description)}</strong>
-      <span>${escapeHtml(task.project?.name ?? '—')} · ${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</span>
-    `;
+    tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: true });
 
     // Planned date
     const tdDate = document.createElement('td');
@@ -558,10 +571,7 @@ function renderMyTasksTable(tbody, tasks) {
     // Task details
     const tdDetails = document.createElement('td');
     tdDetails.className = 'task-name-cell';
-    tdDetails.innerHTML = `
-      <strong>${escapeHtml(task.description.length > 80 ? task.description.slice(0,80)+'…' : task.description)}</strong>
-      <span>${escapeHtml(task.project?.name ?? '—')} · ${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</span>
-    `;
+    tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: false });
 
     // Due date (calculated from created_at + hours, same as the card view)
     const tdDate = document.createElement('td');
