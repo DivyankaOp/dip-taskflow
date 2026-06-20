@@ -37,6 +37,7 @@ const els = {
   myTasksList: document.getElementById('myTasksList'),
 
   employeesTableBody: document.getElementById('employeesTableBody'),
+  employeesCards: document.getElementById('employeesCards'),
   openAddEmployee: document.getElementById('openAddEmployee'),
   employeeModal: document.getElementById('employeeModal'),
   employeeForm: document.getElementById('employeeForm'),
@@ -440,78 +441,7 @@ els.clearAllFilters.addEventListener('click', () => {
   loadAllTasks();
 });
 
-// ── shared cell builder used by all task tables (All tasks / My tasks / Verifications)
-function buildCommonTaskCells(task, index, { showAssignee }) {
-  const cells = [];
-  const statusClass = task.status.replace(/\s/g, '');
-
-  const tdSr = document.createElement('td');
-  tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
-  cells.push(tdSr);
-
-  const tdDetails = document.createElement('td');
-  tdDetails.className = 'task-name-cell';
-  tdDetails.innerHTML = `
-    <strong>${escapeHtml(task.description.length > 80 ? task.description.slice(0,80)+'…' : task.description)}</strong>
-    <span>${escapeHtml(task.project?.name ?? '—')} · ${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</span>
-  `;
-  cells.push(tdDetails);
-
-  const tdDate = document.createElement('td');
-  tdDate.style.whiteSpace = 'nowrap';
-  tdDate.textContent = getDeadlineHtml(task, showAssignee).replace(/<[^>]+>/g, '');
-  cells.push(tdDate);
-
-  if (showAssignee) {
-    const tdAssigned = document.createElement('td');
-    tdAssigned.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
-    cells.push(tdAssigned);
-  }
-
-  const tdVoice = document.createElement('td');
-  tdVoice.style.textAlign = 'center';
-  if (task.voice_note_url) {
-    const a = document.createElement('a');
-    a.href = task.voice_note_url; a.target = '_blank'; a.rel = 'noopener';
-    a.className = 'media-link'; a.title = 'Play voice note'; a.textContent = '🎤';
-    tdVoice.appendChild(a);
-  } else {
-    tdVoice.innerHTML = `<span class="media-none">—</span>`;
-  }
-  cells.push(tdVoice);
-
-  const tdAttach = document.createElement('td');
-  tdAttach.style.textAlign = 'center';
-  if (task.attachment_url) {
-    const a = document.createElement('a');
-    a.href = task.attachment_url; a.target = '_blank'; a.rel = 'noopener';
-    a.className = 'media-link'; a.title = 'View attachment'; a.textContent = '📎';
-    tdAttach.appendChild(a);
-  } else {
-    tdAttach.innerHTML = `<span class="media-none">—</span>`;
-  }
-  cells.push(tdAttach);
-
-  const tdPriority = document.createElement('td');
-  tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
-  cells.push(tdPriority);
-
-  const tdStatus = document.createElement('td');
-  let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
-  if (task.verification_status === 'Pending Verification') {
-    statusHtml += `<br><span class="pill pill-PendingVerification" style="margin-top:4px">⏳ Verifying</span>`;
-  } else if (task.verification_status === 'Verified') {
-    statusHtml += `<br><span class="pill pill-Completed" style="margin-top:4px">✅ Verified</span>`;
-  } else if (task.verification_status === 'Verification Rejected') {
-    statusHtml += `<br><span class="pill pill-Rejected" style="margin-top:4px">↩ Rej.</span>`;
-  }
-  tdStatus.innerHTML = statusHtml;
-  cells.push(tdStatus);
-
-  return cells;
-}
-
-// ── renders the admin "All delegated tasks" table (desktop)
+// ── NEW: renders the admin "All delegated tasks" as the requested table format
 function renderAllTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
@@ -520,14 +450,76 @@ function renderAllTasksTable(tbody, tasks) {
   tbody.innerHTML = '';
   tasks.forEach((task, index) => {
     const tr = document.createElement('tr');
-    const cells = buildCommonTaskCells(task, index, { showAssignee: true });
+    const statusClass = task.status.replace(/\s/g, '');
 
+    // Sr No
+    const tdSr = document.createElement('td');
+    tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
+
+    // Task details
+    const tdDetails = document.createElement('td');
+    tdDetails.className = 'task-name-cell';
+    tdDetails.innerHTML = `
+      <strong>${escapeHtml(task.description.length > 80 ? task.description.slice(0,80)+'…' : task.description)}</strong>
+      <span>${escapeHtml(task.project?.name ?? '—')} · ${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</span>
+    `;
+
+    // Planned date
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.textContent = fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete);
+
+    // Assigned to
+    const tdAssigned = document.createElement('td');
+    tdAssigned.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
+
+    // Voice note
+    const tdVoice = document.createElement('td');
+    tdVoice.style.textAlign = 'center';
+    if (task.voice_note_url) {
+      const a = document.createElement('a');
+      a.href = task.voice_note_url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'media-link'; a.title = 'Play voice note'; a.textContent = '🎤';
+      tdVoice.appendChild(a);
+    } else {
+      tdVoice.innerHTML = `<span class="media-none">—</span>`;
+    }
+
+    // Attachment
+    const tdAttach = document.createElement('td');
+    tdAttach.style.textAlign = 'center';
+    if (task.attachment_url) {
+      const a = document.createElement('a');
+      a.href = task.attachment_url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'media-link'; a.title = 'View attachment'; a.textContent = '📎';
+      tdAttach.appendChild(a);
+    } else {
+      tdAttach.innerHTML = `<span class="media-none">—</span>`;
+    }
+
+    // Priority
+    const tdPriority = document.createElement('td');
+    tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
+
+    // Status (with verification badge if applicable)
+    const tdStatus = document.createElement('td');
+    let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
+    if (task.verification_status === 'Pending Verification') {
+      statusHtml += `<br><span class="pill pill-PendingVerification" style="margin-top:4px">⏳ Verifying</span>`;
+    } else if (task.verification_status === 'Verified') {
+      statusHtml += `<br><span class="pill pill-Completed" style="margin-top:4px">✅ Verified</span>`;
+    } else if (task.verification_status === 'Verification Rejected') {
+      statusHtml += `<br><span class="pill pill-Rejected" style="margin-top:4px">↩ Rej.</span>`;
+    }
+    tdStatus.innerHTML = statusHtml;
+
+    // Actions
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
     buildPrimaryStatusButtons(task, { showAssignee: true, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
     tdActions.appendChild(buildCardMenuElement(task, { showAssignee: true }));
 
-    tr.append(...cells, tdActions);
+    tr.append(tdSr, tdDetails, tdDate, tdAssigned, tdVoice, tdAttach, tdPriority, tdStatus, tdActions);
     tbody.appendChild(tr);
   });
 }
@@ -865,9 +857,11 @@ function renderTicketsList(tickets) {
 // ─── Manage Employees ─────────────────────────────────────────────────────────
 async function loadEmployees() {
   els.employeesTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading employees…</td></tr>`;
+  els.employeesCards.innerHTML = `<div class="empty-state">Loading employees…</div>`;
   try {
     const employees = await api('/employees');
     renderEmployeesTable(employees);
+    renderEmployeesCards(employees);
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -915,6 +909,62 @@ function renderEmployeesTable(employees) {
     actionsCell.appendChild(resetBtn);
 
     els.employeesTableBody.appendChild(tr);
+  });
+}
+
+// ── NEW: renders the "Manage employees" view as cards (shown on mobile)
+function renderEmployeesCards(employees) {
+  if (!employees.length) {
+    els.employeesCards.innerHTML = `<div class="empty-state"><span class="emoji">👥</span>No employees yet</div>`;
+    return;
+  }
+  els.employeesCards.innerHTML = '';
+  employees.forEach((emp) => {
+    const card = document.createElement('div');
+    card.className = 'employee-card';
+    card.innerHTML = `
+      <div class="employee-card-top">
+        <div>
+          <strong>${escapeHtml(emp.full_name)}</strong>
+          <span class="employee-card-meta">${escapeHtml(emp.designation ?? '—')} · ${escapeHtml(emp.department ?? '—')}</span>
+        </div>
+        <span class="role-pill ${emp.role}">${emp.role}</span>
+      </div>
+      <div class="employee-card-row">
+        <span class="employee-card-label">Username</span>
+        <span class="employee-card-value mono">${escapeHtml(emp.username)}</span>
+      </div>
+      <div class="employee-card-toggles"></div>
+      <div class="employee-card-actions"></div>
+    `;
+
+    const togglesEl = card.querySelector('.employee-card-toggles');
+    const statusBtn = document.createElement('button');
+    statusBtn.className = `status-toggle ${emp.is_active ? 'active' : 'inactive'}`;
+    statusBtn.textContent = emp.is_active ? 'Active' : 'Inactive';
+    statusBtn.addEventListener('click', () => toggleEmployeeStatus(emp));
+    togglesEl.appendChild(statusBtn);
+
+    const verifierBtn = document.createElement('button');
+    verifierBtn.className = `status-toggle ${emp.can_verify ? 'active' : 'inactive'}`;
+    verifierBtn.textContent = emp.can_verify ? 'Verifier: Yes' : 'Verifier: No';
+    verifierBtn.addEventListener('click', () => toggleEmployeeVerifier(emp));
+    togglesEl.appendChild(verifierBtn);
+
+    const actionsEl = card.querySelector('.employee-card-actions');
+    const editBtn = document.createElement('button');
+    editBtn.className = 'action-btn action-start';
+    editBtn.textContent = '✏️ Edit';
+    editBtn.addEventListener('click', () => openEditEmployeeModal(emp));
+    actionsEl.appendChild(editBtn);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'action-btn action-start';
+    resetBtn.textContent = '🔑 Reset password';
+    resetBtn.addEventListener('click', () => resetEmployeePassword(emp));
+    actionsEl.appendChild(resetBtn);
+
+    els.employeesCards.appendChild(card);
   });
 }
 
