@@ -657,9 +657,16 @@ input, select, textarea, button { font-family: var(--font-body); font-size: 0.9r
 .task-list-desktop { display: none; }
 .task-list-desktop .data-table td { vertical-align: top; }
 @media (min-width: 761px) {
-  .task-list-mobile { display: none; }
+  /* The mobile-cards wrapper carries BOTH "task-list" and "task-list-mobile"
+     classes on the same element. The old ".task-list { display: grid }"
+     rule below was declared after this one with equal specificity, so it
+     won the cascade and silently re-showed the mobile cards on desktop —
+     that's why cards and the table both appeared in "All delegated tasks".
+     !important pins the hide so card layout can never leak through, and
+     the grid rule is now scoped to skip the mobile wrapper entirely. */
+  .task-list-mobile { display: none !important; }
   .task-list-desktop { display: block; }
-  .task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); align-items: start; }
+  .task-list:not(.task-list-mobile) { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); align-items: start; }
 }
 
 /* ================================================================
