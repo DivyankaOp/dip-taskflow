@@ -447,15 +447,20 @@ els.clearAllFilters.addEventListener('click', () => {
 });
 
 // ----------------------------- My Tasks (everyone) -----------------------------
-// "My Tasks" always shows only the current user's Pending tasks — there is
-// no filter control for employees, and rejected/in-progress/completed tasks
-// are intentionally excluded here so the page only ever shows what's
-// waiting on the user to start.
+// "My Tasks" shows the current user's Pending and In Progress tasks — there
+// is no filter control for employees. Completed tasks disappear from this
+// view once finished (they still live forever in the admin's "All
+// delegated tasks"), and Rejected tasks are hidden too. We fetch the full
+// unfiltered list from /tasks/my and filter client-side, since the backend
+// only supports a single exact-match status, not "anything except X/Y".
 async function loadMyTasks() {
   els.myTasksList.innerHTML = '<div class="empty-state">Loading tasks…</div>';
   try {
-    const tasks = await api('/tasks/my?status=Pending');
-    renderTaskList(els.myTasksList, tasks, { showAssignee: false, allowActions: true });
+    const allTasks = await api('/tasks/my');
+    const visibleTasks = allTasks.filter(
+      (task) => task.status !== 'Completed' && task.status !== 'Rejected'
+    );
+    renderTaskList(els.myTasksList, visibleTasks, { showAssignee: false, allowActions: true });
   } catch (err) {
     showToast(err.message, 'error');
   }
