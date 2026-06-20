@@ -204,7 +204,27 @@
             <h2 class="view-title">My tasks</h2>
             <p class="view-sub">Your active and pending tasks are listed here.</p>
           </div>
-          <div id="myTasksList" class="task-list"></div>
+
+          <div class="table-card view-desktop-only">
+            <div class="table-scroll">
+              <table class="data-table" id="myTasksTable">
+                <thead>
+                  <tr>
+                    <th class="col-sr">Sr No</th>
+                    <th class="col-details">Task details</th>
+                    <th class="col-date">Due date</th>
+                    <th class="col-voice">Voice note</th>
+                    <th class="col-attach">Attachment</th>
+                    <th class="col-priority">Priority</th>
+                    <th class="col-status">Status</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="myTasksTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="myTasksList" class="task-list view-mobile-only"></div>
         </section>
 
         <!-- MANAGE EMPLOYEES -->
