@@ -740,3 +740,118 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .voice-recorder-btns button {
   font-size: 0.85rem;
 }
+
+/* ─── Recurring Tasks ──────────────────────────────────────────────────── */
+
+/* Frequency selector grid */
+.freq-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.freq-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 10px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  gap: 2px;
+}
+.freq-btn strong { font-size: 14px; font-weight: 700; color: #2d3748; }
+.freq-btn small  { font-size: 11px; color: #718096; }
+.freq-btn:hover  { border-color: #7c3aed; background: #f5f3ff; }
+.freq-btn.selected {
+  border-color: #7c3aed;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+.freq-btn.selected strong,
+.freq-btn.selected small { color: #fff; }
+
+/* Day checkboxes */
+.days-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.day-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.day-check input { display: none; }
+.day-check:has(input:checked) {
+  border-color: #7c3aed;
+  background: #7c3aed;
+  color: #fff;
+}
+
+/* Checkpoint rows in modal */
+.checkpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.checkpoint-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.checkpoint-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+}
+
+/* Checkpoint list on employee cards */
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.checkpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #f8f9fa;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.checkpoint-item input[type=checkbox] {
+  width: 18px; height: 18px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.checkpoint-item.cp-done {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.checkpoint-item.cp-done span {
+  text-decoration: line-through;
+  color: #64748b;
+}
+
+/* pill colours */
+.pill-Completed { background: #d1fae5; color: #065f46; }
