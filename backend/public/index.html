@@ -404,6 +404,36 @@
           <div id="correctionsList" class="task-list" style="margin-top:20px"></div>
         </section>
 
+        <!-- RECURRING TASKS -->
+        <section id="view-recurring" class="view" hidden>
+          <div class="view-header-row">
+            <div class="view-heading" style="margin-bottom:0">
+              <h2 class="view-title">🔁 Recurring Tasks</h2>
+              <p class="view-sub" id="recurringViewSub">Tasks that repeat on a schedule.</p>
+            </div>
+            <button id="openAddRecurring" class="primary-btn primary-btn-inline" hidden>+ Add recurring task</button>
+          </div>
+          <div id="adminRecurringWrap" hidden>
+            <div class="table-card view-desktop-only" style="margin-top:20px">
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th><th>Description</th><th>Frequency</th>
+                      <th>Period</th><th>Checkpoints</th><th>Active</th><th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recurringTasksTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="adminRecurringCards" class="task-list view-mobile-only" style="margin-top:20px"></div>
+          </div>
+          <div id="employeeRecurringWrap" hidden style="margin-top:20px">
+            <div id="employeeRecurringList"></div>
+          </div>
+        </section>
+
       </main>
     </div>
   </section>
@@ -726,6 +756,105 @@
           <button type="submit" class="primary-btn primary-btn-inline">Resend for Verification</button>
         </div>
       </form>
+    </div>
+  </div>
+
+
+  <!-- Add/Edit Recurring Task Modal -->
+  <div id="recurringModal" class="modal-backdrop" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="recurringModalTitle">🔁 Create Recurring Task</h3>
+        <button class="modal-close" id="closeRecurringModal">&times;</button>
+      </div>
+      <div class="modal-body" id="recurringModalBody">
+        <input type="hidden" id="recurring-edit-id" />
+        <div class="field-grid">
+          <div class="field">
+            <label for="rec-department">Department <span class="optional">(Optional)</span></label>
+            <select id="rec-department"><option value="">Select Department</option></select>
+          </div>
+          <div class="field">
+            <label for="rec-employee">Employee <span class="req">*</span></label>
+            <select id="rec-employee" required><option value="">Select Employee</option></select>
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="rec-tasktype">Task Type <span class="optional">(Optional)</span></label>
+            <select id="rec-tasktype"><option value="">Select Task Type</option></select>
+          </div>
+          <div class="field">
+            <label for="rec-project">Project <span class="optional">(Optional)</span></label>
+            <select id="rec-project"><option value="">Select Project</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="rec-description">Task Description <span class="req">*</span></label>
+          <textarea id="rec-description" rows="3" placeholder="Describe the recurring task" required></textarea>
+        </div>
+        <div class="field-grid">
+          <div class="field">
+            <label for="rec-priority">Priority</label>
+            <select id="rec-priority">
+              <option value="Low">Low</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Frequency selector -->
+        <div class="field">
+          <label>Frequency <span class="req">*</span></label>
+          <div class="freq-grid">
+            <button type="button" class="freq-btn" data-freq="Daily"><strong>Daily</strong><small>Every day</small></button>
+            <button type="button" class="freq-btn" data-freq="Weekly"><strong>Weekly</strong><small>Every week</small></button>
+            <button type="button" class="freq-btn" data-freq="Monthly"><strong>Monthly</strong><small>Every month</small></button>
+            <button type="button" class="freq-btn" data-freq="Yearly"><strong>Yearly</strong><small>Every year</small></button>
+          </div>
+        </div>
+
+        <!-- Weekly day selector -->
+        <div class="field" id="weeklyDaysField" hidden>
+          <label>Select Days <span class="req">*</span></label>
+          <div class="days-grid">
+            <label class="day-check"><input type="checkbox" value="0" /> Sun</label>
+            <label class="day-check"><input type="checkbox" value="1" /> Mon</label>
+            <label class="day-check"><input type="checkbox" value="2" /> Tue</label>
+            <label class="day-check"><input type="checkbox" value="3" /> Wed</label>
+            <label class="day-check"><input type="checkbox" value="4" /> Thu</label>
+            <label class="day-check"><input type="checkbox" value="5" /> Fri</label>
+            <label class="day-check"><input type="checkbox" value="6" /> Sat</label>
+          </div>
+        </div>
+
+        <!-- Active period -->
+        <div class="field-grid">
+          <div class="field">
+            <label for="rec-start">Start Date <span class="req">*</span></label>
+            <input id="rec-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="rec-end">End Date <span class="optional">(optional)</span></label>
+            <input id="rec-end" type="date" />
+          </div>
+        </div>
+
+        <!-- Checkpoints -->
+        <div class="field">
+          <label>Checkpoints <span class="optional">(optional)</span></label>
+          <p class="form-note">Employee must tick all checkpoints before the task is marked done.</p>
+          <div id="checkpointsList"></div>
+          <button type="button" id="addCheckpointBtn" class="ghost-btn-text" style="margin-top:8px">+ Add checkpoint</button>
+        </div>
+
+        <p id="recurringFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelRecurringModal">Cancel</button>
+          <button type="button" id="saveRecurringBtn" class="primary-btn primary-btn-inline">Create Recurring Task</button>
+        </div>
+      </div>
     </div>
   </div>
 
