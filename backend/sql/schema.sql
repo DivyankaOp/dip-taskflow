@@ -47,6 +47,22 @@ create table if not exists task_types (
   name text unique not null
 );
 
+-- Default checkpoint template per task type. When an admin picks a Task Type
+-- while creating/editing a recurring task, these labels are pre-filled into
+-- the checkpoints list (still editable per-task). Saving a recurring task
+-- with a task_type_id upserts this template with whatever checkpoints were
+-- used, so the template always reflects the most recently used set.
+create table if not exists task_type_checkpoint_templates (
+  id uuid primary key default gen_random_uuid(),
+  task_type_id uuid not null references task_types(id) on delete cascade,
+  label text not null,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_tt_checkpoint_templates_type
+  on task_type_checkpoint_templates(task_type_id);
+
 -- ============ TASKS ============
 create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
@@ -117,3 +133,13 @@ alter table tickets enable row level security;
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejected_at timestamptz;
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS verification_attachment_urls text[];
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS correction_voice_url text;
+
+-- create table if not exists task_type_checkpoint_templates (
+--   id uuid primary key default gen_random_uuid(),
+--   task_type_id uuid not null references task_types(id) on delete cascade,
+--   label text not null,
+--   sort_order int not null default 0,
+--   created_at timestamptz not null default now()
+-- );
+-- create index if not exists idx_tt_checkpoint_templates_type
+--   on task_type_checkpoint_templates(task_type_id);
