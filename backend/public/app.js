@@ -93,6 +93,33 @@ const els = {
   closeTicketModal: document.getElementById('closeTicketModal'),
   cancelTicketModal: document.getElementById('cancelTicketModal'),
 
+  // Corrections view (employee)
+  correctionsList: document.getElementById('correctionsList'),
+
+  // Correction modal (verifier → employee)
+  correctionModal: document.getElementById('correctionModal'),
+  correctionForm: document.getElementById('correctionForm'),
+  correctionFormMsg: document.getElementById('correctionFormMsg'),
+  correctionNote: document.getElementById('correction-note'),
+  closeCorrectionModal: document.getElementById('closeCorrectionModal'),
+  cancelCorrectionModal: document.getElementById('cancelCorrectionModal'),
+  corrStartRecord: document.getElementById('corrStartRecord'),
+  corrStopRecord: document.getElementById('corrStopRecord'),
+  corrRecordStatus: document.getElementById('corrRecordStatus'),
+  corrVoicePlayback: document.getElementById('corrVoicePlayback'),
+
+  // Resend verification modal (employee after correction)
+  resendVerifyModal: document.getElementById('resendVerifyModal'),
+  resendVerifyForm: document.getElementById('resendVerifyForm'),
+  resendVerifyFormMsg: document.getElementById('resendVerifyFormMsg'),
+  resendVerifierName: document.getElementById('resendVerifierName'),
+  resendFiles: document.getElementById('resend-files'),
+  closeResendVerifyModal: document.getElementById('closeResendVerifyModal'),
+  cancelResendVerifyModal: document.getElementById('cancelResendVerifyModal'),
+
+  // Verify modal file input
+  verifyFiles: document.getElementById('verify-files'),
+
   rescheduleModal: document.getElementById('rescheduleModal'),
   rescheduleForm: document.getElementById('rescheduleForm'),
   rescheduleFormMsg: document.getElementById('rescheduleFormMsg'),
@@ -126,7 +153,8 @@ let state = {
   user: JSON.parse(localStorage.getItem('tf_user') || 'null'),
   master: { departments: [], projects: [], taskTypes: [], employees: [] },
   activeView: null,
-  pendingTaskId: null
+  pendingTaskId: null,
+  pendingVerifierId: null
 };
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -311,6 +339,14 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('verifications', '🔎 Verification requests'));
   }
 
+  // Corrections section — visible to all employees (admin doesn't get corrections, they assign them)
+  if (!isAdmin) {
+    const corrLabel = document.createElement('div');
+    corrLabel.className = 'nav-section-label'; corrLabel.textContent = 'Corrections';
+    els.navList.appendChild(corrLabel);
+    els.navList.appendChild(makeNavButton('corrections', '↩ Corrections'));
+  }
+
   const supportLabel = document.createElement('div');
   supportLabel.className = 'nav-section-label'; supportLabel.textContent = 'Support';
   els.navList.appendChild(supportLabel);
@@ -339,6 +375,7 @@ function switchView(viewKey) {
   if (viewKey === 'permissions')   loadPermissions();
   if (viewKey === 'verifications') loadVerifications();
   if (viewKey === 'tickets')       loadTickets();
+  if (viewKey === 'corrections')   loadCorrections();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -769,11 +806,15 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
   }
   const actionsEl = card.querySelector('.task-actions');
   if (verificationMode) {
-    actionsEl.appendChild(makeActionBtn('action-complete', 'Approve', () => verifyTask(task.id, true)));
-    actionsEl.appendChild(makeActionBtn('action-reject', 'Reject', () => {
-      const note = prompt('Reason for rejecting this verification (optional):') || '';
-      verifyTask(task.id, false, note);
-    }));
+    // Two-step: "Start Verification" → then Verify or Send for Correction
+    const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+      actionsEl.innerHTML = '';
+      actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+        if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
+      }));
+      actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+    });
+    actionsEl.appendChild(startBtn);
     return card;
   }
   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
@@ -808,6 +849,7 @@ document.addEventListener('click', () => {
 async function openVerifyModal(taskId) {
   state.pendingTaskId = taskId; els.verifyFormMsg.hidden = true;
   els.verifyPerson.innerHTML = '<option value="">Loading…</option>';
+  if (els.verifyFiles) els.verifyFiles.value = '';
   els.verifyModal.hidden = false;
   try {
     const verifiers = await api('/master/verifiers');
@@ -819,21 +861,114 @@ els.cancelVerifyModal.addEventListener('click', () => { els.verifyModal.hidden =
 els.verifyForm.addEventListener('submit', async (e) => {
   e.preventDefault(); els.verifyFormMsg.hidden = true;
   try {
+    const formData = new FormData();
+    formData.append('verifier_id', els.verifyPerson.value);
+    const files = els.verifyFiles ? [...els.verifyFiles.files].slice(0, 3) : [];
+    files.forEach((f) => formData.append('verification_files', f));
     await api(`/tasks/${state.pendingTaskId}/send-for-verification`, {
-      method: 'PATCH', body: { verifier_id: els.verifyPerson.value }
+      method: 'PATCH', body: formData, isForm: true
     });
     showToast('Sent for verification ✅', 'success');
     els.verifyModal.hidden = true; reloadCurrentTaskView();
   } catch (err) { els.verifyFormMsg.textContent = err.message; els.verifyFormMsg.hidden = false; }
 });
 
-async function verifyTask(taskId, approved, note) {
+// ─── Verifier two-step flow: Start → Verify OR Send for Correction ───────────
+// Called when verifier clicks "Start Verification" on a card/row.
+// We toggle the card's action area to show the two choice buttons.
+function startVerificationInline(taskId, actionsEl) {
+  actionsEl.innerHTML = '';
+  actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+    if (confirm('Mark this task as Verified?')) verifyApprove(taskId);
+  }));
+  actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(taskId)));
+}
+
+async function verifyApprove(taskId) {
   try {
-    await api(`/tasks/${taskId}/verify`, { method: 'PATCH', body: { approved, note } });
-    showToast(approved ? 'Task verified ✅' : 'Sent back to the assignee', 'success');
+    await api(`/tasks/${taskId}/verify`, { method: 'PATCH', body: { approved: true } });
+    showToast('Task verified ✅', 'success');
     loadVerifications();
   } catch (err) { showToast(err.message, 'error'); }
 }
+
+// ─── Correction Modal (verifier sends correction note + optional voice) ────────
+let corrVoiceBlob = null;
+let corrMediaRecorder = null;
+
+function openCorrectionModal(taskId) {
+  state.pendingTaskId = taskId;
+  els.correctionNote.value = '';
+  els.correctionFormMsg.hidden = true;
+  els.corrVoicePlayback.hidden = true;
+  els.corrVoicePlayback.src = '';
+  els.corrRecordStatus.textContent = '';
+  els.corrStartRecord.disabled = false;
+  els.corrStopRecord.disabled = true;
+  corrVoiceBlob = null;
+  els.correctionModal.hidden = false;
+}
+
+els.closeCorrectionModal.addEventListener('click', stopCorrectionRecordingAndClose);
+els.cancelCorrectionModal.addEventListener('click', stopCorrectionRecordingAndClose);
+function stopCorrectionRecordingAndClose() {
+  if (corrMediaRecorder && corrMediaRecorder.state !== 'inactive') corrMediaRecorder.stop();
+  els.correctionModal.hidden = true;
+}
+
+// Voice recording for correction modal
+els.corrStartRecord.addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const chunks = [];
+    corrMediaRecorder = new MediaRecorder(stream);
+    corrMediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    corrMediaRecorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      corrVoiceBlob = new Blob(chunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(corrVoiceBlob);
+      els.corrVoicePlayback.src = url;
+      els.corrVoicePlayback.hidden = false;
+      els.corrRecordStatus.textContent = '✅ Recording saved';
+      els.corrStartRecord.disabled = false;
+      els.corrStopRecord.disabled = true;
+    };
+    corrMediaRecorder.start();
+    els.corrStartRecord.disabled = true;
+    els.corrStopRecord.disabled = false;
+    els.corrRecordStatus.textContent = '🔴 Recording…';
+    els.corrVoicePlayback.hidden = true;
+  } catch (err) {
+    els.corrRecordStatus.textContent = '❌ Microphone access denied';
+  }
+});
+els.corrStopRecord.addEventListener('click', () => {
+  if (corrMediaRecorder && corrMediaRecorder.state !== 'inactive') corrMediaRecorder.stop();
+});
+
+els.correctionForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  els.correctionFormMsg.hidden = true;
+  const note = els.correctionNote.value.trim();
+  if (!note) {
+    els.correctionFormMsg.textContent = 'Please write a correction note before sending';
+    els.correctionFormMsg.hidden = false;
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append('note', note);
+    if (corrVoiceBlob) {
+      formData.append('correction_voice', corrVoiceBlob, 'correction_voice.webm');
+    }
+    await api(`/tasks/${state.pendingTaskId}/send-correction`, {
+      method: 'PATCH', body: formData, isForm: true
+    });
+    showToast('Correction sent ✅', 'success');
+    els.correctionModal.hidden = true;
+    loadVerifications();
+  } catch (err) { els.correctionFormMsg.textContent = err.message; els.correctionFormMsg.hidden = false; }
+});
 
 async function loadVerifications() {
   els.verificationsTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
@@ -844,6 +979,82 @@ async function loadVerifications() {
     renderTaskList(els.verificationsList, tasks, { showAssignee: true, allowActions: false, verificationMode: true });
   } catch (err) { showToast(err.message, 'error'); }
 }
+
+// ─── Corrections view (employee) ──────────────────────────────────────────────
+async function loadCorrections() {
+  els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
+  try {
+    const allTasks = await api('/tasks/my');
+    const corrections = allTasks.filter((t) => t.verification_status === 'Verification Rejected');
+    renderCorrectionsList(corrections);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderCorrectionsList(tasks) {
+  if (!tasks.length) {
+    els.correctionsList.innerHTML = `<div class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</div>`;
+    return;
+  }
+  els.correctionsList.classList.add('task-list');
+  els.correctionsList.innerHTML = '';
+  tasks.forEach((task) => {
+    const card = document.createElement('div');
+    card.className = `task-card priority-${task.priority}`;
+    card.innerHTML = `
+      <div class="task-card-top">
+        <div>
+          <div class="task-card-project">${escapeHtml(task.project?.name ?? '—')}</div>
+          <div class="task-card-type">${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</div>
+        </div>
+        <span class="pill pill-Rejected">Correction Needed</span>
+      </div>
+      <p class="task-card-desc">${escapeHtml(task.description)}</p>
+      <div class="correction-note-box">
+        <div class="correction-note-label">↩ Correction note from <strong>${escapeHtml(task.verifier?.full_name ?? 'Verifier')}</strong>:</div>
+        <div class="correction-note-text">${escapeHtml(task.verification_note ?? '(no note)')}</div>
+        ${task.correction_voice_url ? `<a href="${task.correction_voice_url}" target="_blank" rel="noopener" class="attachment-link" style="margin-top:6px;display:inline-block">🎤 Voice note from verifier</a>` : ''}
+      </div>
+      ${task.verification_attachment_urls?.length ? `<div class="task-meta">${task.verification_attachment_urls.map((u, i) => `<a href="${u}" target="_blank" rel="noopener" class="attachment-link">📎 Your file ${i + 1}</a>`).join(' ')}</div>` : ''}
+      <div class="task-card-footer">
+        <span class="pill pill-InProgress">${task.status}</span>
+        <div class="task-actions" id="corr-actions-${task.id}"></div>
+      </div>
+    `;
+    const actionsEl = card.querySelector(`#corr-actions-${task.id}`);
+    actionsEl.appendChild(makeActionBtn('action-start', '🔄 Resend for Verification', () => openResendVerifyModal(task)));
+    els.correctionsList.appendChild(card);
+  });
+}
+
+// Resend for verification (employee after correction — verifier is already known)
+function openResendVerifyModal(task) {
+  state.pendingTaskId = task.id;
+  state.pendingVerifierId = task.verifier?.id ?? null;
+  els.resendVerifierName.textContent = task.verifier?.full_name ?? 'the verifier';
+  els.resendVerifyFormMsg.hidden = true;
+  els.resendFiles.value = '';
+  els.resendVerifyModal.hidden = false;
+}
+els.closeResendVerifyModal.addEventListener('click', () => { els.resendVerifyModal.hidden = true; });
+els.cancelResendVerifyModal.addEventListener('click', () => { els.resendVerifyModal.hidden = true; });
+els.resendVerifyForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.resendVerifyFormMsg.hidden = true;
+  try {
+    if (!state.pendingVerifierId) {
+      throw new Error('Verifier not found — please contact your admin');
+    }
+    const formData = new FormData();
+    formData.append('verifier_id', state.pendingVerifierId);
+    const files = [...els.resendFiles.files].slice(0, 3);
+    files.forEach((f) => formData.append('verification_files', f));
+    await api(`/tasks/${state.pendingTaskId}/send-for-verification`, {
+      method: 'PATCH', body: formData, isForm: true
+    });
+    showToast('Resent for verification ✅', 'success');
+    els.resendVerifyModal.hidden = true;
+    loadCorrections();
+  } catch (err) { els.resendVerifyFormMsg.textContent = err.message; els.resendVerifyFormMsg.hidden = false; }
+});
 
 function renderVerificationsTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
@@ -891,14 +1102,17 @@ function renderVerificationsTable(tbody, tasks) {
     tdDate.style.whiteSpace = 'nowrap';
     tdDate.textContent = fmtDate(task.verification_requested_at ?? task.updated_at ?? task.created_at);
 
-    // Actions — Approve / Reject
+    // Actions — "Start Verification" → then Verify or Send for Correction
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
-    tdActions.appendChild(makeActionBtn('action-complete', '✅ Approve', () => verifyTask(task.id, true)));
-    tdActions.appendChild(makeActionBtn('action-reject', '↩ Reject', () => {
-      const note = prompt('Reason for rejecting (optional):') || '';
-      verifyTask(task.id, false, note);
-    }));
+    const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+      tdActions.innerHTML = '';
+      tdActions.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+        if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
+      }));
+      tdActions.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+    });
+    tdActions.appendChild(startBtn);
 
     tr.append(tdReqId, tdSr, tdProject, tdTaskType, tdSubmittedBy, tdAttach, tdDate, tdActions);
     tbody.appendChild(tr);
