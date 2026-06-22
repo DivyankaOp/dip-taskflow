@@ -154,11 +154,13 @@ router.post('/', requireAdmin, async (req, res) => {
 
     // Insert checkpoints
     if (checkpoints.length > 0) {
-      const cpRows = checkpoints.map((label, i) => ({
-        recurring_task_id: rt.id,
-        label: label.trim(),
-        sort_order: i
-      })).filter(r => r.label);
+      const cpRows = checkpoints
+        .map((label, i) => ({
+          recurring_task_id: rt.id,
+          label: typeof label === 'string' ? label.trim() : '',
+          sort_order: i
+        }))
+        .filter(r => r.label);
 
       if (cpRows.length) {
         const { error: cpErr } = await supabase
@@ -183,8 +185,9 @@ router.post('/', requireAdmin, async (req, res) => {
 
     res.status(201).json(full);
   } catch (err) {
-    console.error('Create recurring task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not create recurring task' });
+    const detail = err.message || err.details || err.hint || JSON.stringify(err);
+    console.error('Create recurring task error:', detail, err);
+    res.status(500).json({ error: detail || 'Could not create recurring task' });
   }
 });
 
@@ -292,8 +295,9 @@ router.patch('/:id', requireAdmin, async (req, res) => {
       .from('recurring_tasks').select(RT_SELECT).eq('id', id).single();
     res.json(full);
   } catch (err) {
-    console.error('Update recurring task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not update recurring task' });
+    const detail = err.message || err.details || err.hint || JSON.stringify(err);
+    console.error('Update recurring task error:', detail, err);
+    res.status(500).json({ error: detail || 'Could not update recurring task' });
   }
 });
 
