@@ -474,6 +474,46 @@
           </div>
         </section>
 
+        <!-- REPORTS (admin only) -->
+        <section id="view-reports" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">📊 Reports</h2>
+            <p class="view-sub">Employee-wise task performance and time tracking.</p>
+          </div>
+
+          <!-- Filter bar -->
+          <div class="filter-panel" style="margin-bottom:20px">
+            <div class="filter-row" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+              <div class="filter-field">
+                <label class="filter-label">Time period</label>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <button class="report-range-btn active" data-range="day">Today</button>
+                  <button class="report-range-btn" data-range="week">This week</button>
+                  <button class="report-range-btn" data-range="month">This month</button>
+                  <button class="report-range-btn" data-range="custom">Custom</button>
+                </div>
+              </div>
+              <div id="reportCustomDates" style="display:none;gap:8px;display:none;align-items:flex-end">
+                <div class="filter-field">
+                  <label class="filter-label">From</label>
+                  <input type="date" id="reportFrom" />
+                </div>
+                <div class="filter-field">
+                  <label class="filter-label">To</label>
+                  <input type="date" id="reportTo" />
+                </div>
+              </div>
+              <button id="loadReportBtn" class="primary-btn primary-btn-inline" style="height:36px">Load report</button>
+            </div>
+          </div>
+
+          <!-- Summary cards -->
+          <div id="reportSummaryCards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
+
+          <!-- Employee accordion -->
+          <div id="reportContent"></div>
+        </section>
+
       </main>
     </div>
   </section>
