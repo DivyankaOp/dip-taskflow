@@ -14,10 +14,13 @@
   <section id="loginScreen" class="screen login-screen">
     <div class="login-card">
       <div class="brand">
-        <span class="brand-mark">TF</span>
+        <img src="https://drive.google.com/thumbnail?id=10FeV3emPMe-VCvGni66b2DOzNIPM3mGp&sz=w120" 
+             alt="Company Logo" class="brand-logo"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <span class="brand-mark" style="display:none">TF</span>
         <div>
           <h1>TaskFlow</h1>
-          <p class="brand-tag">Assign it. Track it. Done.</p>
+          <p class="brand-tag">Quality + Quantity · On Time Every Time</p>
         </div>
       </div>
       <form id="loginForm" autocomplete="off">
@@ -40,13 +43,19 @@
     <header class="topbar">
       <button id="menuToggle" class="icon-btn" aria-label="Toggle menu">☰</button>
       <div class="topbar-brand">
-        <span class="topbar-mark">TF</span>
+        <img src="https://drive.google.com/thumbnail?id=10FeV3emPMe-VCvGni66b2DOzNIPM3mGp&sz=w40"
+             alt="Logo" class="topbar-logo"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <span class="topbar-mark" style="display:none">TF</span>
         <span class="topbar-name">TaskFlow</span>
       </div>
       <div class="topbar-user">
         <div class="topbar-user-info">
-          <strong id="userName">—</strong>
-          <span id="userRoleTag" class="role-tag">—</span>
+          <div class="topbar-user-namerow">
+            <strong id="userName">—</strong>
+            <span id="userRoleTag" class="role-tag">—</span>
+          </div>
+          <span class="topbar-tagline">Quality + Quantity to be delivered on time every time</span>
         </div>
         <button id="logoutBtn" class="logout-btn">↩ Log out</button>
       </div>
@@ -352,7 +361,26 @@
             <h2 class="view-title">Verification requests</h2>
             <p class="view-sub">Review and approve tasks pending your sign-off.</p>
           </div>
-          <div id="verificationsList" class="task-list"></div>
+          <div class="table-card view-desktop-only">
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="col-reqid">Request ID</th>
+                    <th class="col-tasksr">Task Sr No</th>
+                    <th class="col-vproject">Project</th>
+                    <th class="col-vtasktype">Task Type</th>
+                    <th class="col-vsubmitted">Submitted By</th>
+                    <th class="col-vattach">Attachments</th>
+                    <th class="col-vdate">Submission Date</th>
+                    <th class="col-vactions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="verificationsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="verificationsList" class="task-list view-mobile-only"></div>
         </section>
 
         <!-- TICKETS -->
