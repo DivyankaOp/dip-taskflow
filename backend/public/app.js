@@ -180,7 +180,7 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
   return data;
 }
 
-function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name' } = {}) {
+function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
     const opt = document.createElement('option');
@@ -192,6 +192,11 @@ function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'n
     opt.value = item[valueKey]; opt.textContent = item[labelKey];
     select.appendChild(opt);
   });
+  if (extraOption) {
+    const opt = document.createElement('option');
+    opt.value = extraOption.value; opt.textContent = extraOption.label;
+    select.appendChild(opt);
+  }
 }
 
 function fmtDate(iso) {
@@ -1616,7 +1621,6 @@ const recEls = {
   empList:       () => document.getElementById('employeeRecurringList'),
   adminTable:    () => document.getElementById('recurringTasksTableBody'),
   adminCards:    () => document.getElementById('adminRecurringCards'),
-  addTaskTypeBtn:    () => document.getElementById('recAddTaskTypeBtn'),
   newTaskTypeRow:    () => document.getElementById('recNewTaskTypeRow'),
   newTaskTypeInput:  () => document.getElementById('recNewTaskTypeInput'),
   newTaskTypeSave:   () => document.getElementById('recNewTaskTypeSave'),
@@ -1652,12 +1656,25 @@ function initRecurringModal() {
   // Open Add button (admin only)
   recEls.openBtn().addEventListener('click', () => openRecurringModal(null));
 
-  // Task type changed → auto-load that type's saved checkpoint template
-  // (only in "create" mode, or if the checkpoint list is currently empty —
-  // we don't want to silently wipe out checkpoints someone is editing).
+  // Task type changed → either open the inline "add new" row, or
+  // auto-load that type's saved checkpoint template.
   recEls.taskType().addEventListener('change', async () => {
     const taskTypeId = recEls.taskType().value;
+
+    if (taskTypeId === '__add_new__') {
+      recEls.taskTypeMsg().hidden = true;
+      recEls.newTaskTypeInput().value = '';
+      recEls.newTaskTypeRow().hidden = false;
+      recEls.newTaskTypeInput().focus();
+      // Reset selection back to placeholder so "+ Add new task type…"
+      // doesn't stay selected as if it were a real task type.
+      recEls.taskType().value = '';
+      return;
+    }
+
+    recEls.newTaskTypeRow().hidden = true;
     if (!taskTypeId) return;
+
     const hasExisting = recEls.checkpointsList().children.length > 0;
     if (hasExisting) {
       const ok = confirm("Load this task type's saved checkpoints? This will replace the current checkpoint list.");
@@ -1674,13 +1691,6 @@ function initRecurringModal() {
     }
   });
 
-  // "+ Add" task type → reveal inline mini-form
-  recEls.addTaskTypeBtn().addEventListener('click', () => {
-    recEls.taskTypeMsg().hidden = true;
-    recEls.newTaskTypeInput().value = '';
-    recEls.newTaskTypeRow().hidden = false;
-    recEls.newTaskTypeInput().focus();
-  });
   recEls.newTaskTypeCancel().addEventListener('click', () => {
     recEls.newTaskTypeRow().hidden = true;
   });
@@ -1709,7 +1719,10 @@ async function saveNewTaskTypeFromModal() {
     const taskTypes = await api('/master/task-types');
     state.master.taskTypes = taskTypes;
     fillSelect(els.fTaskType, taskTypes, { placeholder: 'Select task type' });
-    fillSelect(recEls.taskType(), taskTypes, { placeholder: 'Select Task Type' });
+    fillSelect(recEls.taskType(), taskTypes, {
+      placeholder: 'Select Task Type',
+      extraOption: { value: '__add_new__', label: '+ Add new task type…' }
+    });
     const created = taskTypes.find(t => t.name === name);
     if (created) recEls.taskType().value = created.id;
     recEls.newTaskTypeRow().hidden = true;
@@ -2098,6 +2111,9 @@ function fillRecurringDropdowns() {
   if (!state.master) return;
   fillSelect(recEls.department(), state.master.departments, { placeholder: 'Select Department' });
   fillSelect(recEls.employee(), state.master.employees, { placeholder: 'Select Employee', labelKey: 'full_name' });
-  fillSelect(recEls.taskType(), state.master.taskTypes, { placeholder: 'Select Task Type' });
+  fillSelect(recEls.taskType(), state.master.taskTypes, {
+    placeholder: 'Select Task Type',
+    extraOption: { value: '__add_new__', label: '+ Add new task type…' }
+  });
   fillSelect(recEls.project(), state.master.projects, { placeholder: 'Select Project' });
 }
