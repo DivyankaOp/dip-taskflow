@@ -236,6 +236,8 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Builds the "Project: / Task Type: / Details: [/ Assigned to:]" block used
+// in the Task Details column of both the All Tasks and My Tasks tables.
 function buildTaskDetailsHtml(task, { showAssignee = false } = {}) {
   const desc = task.description ?? '';
   const shortDesc = desc.length > 100 ? desc.slice(0, 100) + '…' : desc;
@@ -343,6 +345,7 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('verifications', '🔎 Verification requests'));
   }
 
+  // Corrections section — visible to all employees (admin doesn't get corrections, they assign them)
   if (!isAdmin) {
     const corrLabel = document.createElement('div');
     corrLabel.className = 'nav-section-label'; corrLabel.textContent = 'Corrections';
@@ -502,6 +505,7 @@ els.clearAllFilters.addEventListener('click', () => {
   loadAllTasks();
 });
 
+// renders the admin "All delegated tasks" as a table (desktop)
 function renderAllTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
@@ -512,20 +516,25 @@ function renderAllTasksTable(tbody, tasks) {
     const tr = document.createElement('tr');
     const statusClass = task.status.replace(/\s/g, '');
 
+    // Sr No
     const tdSr = document.createElement('td');
     tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
 
+    // Task details
     const tdDetails = document.createElement('td');
     tdDetails.className = 'task-name-cell';
     tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: true });
 
+    // Planned date
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     tdDate.textContent = fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete);
 
+    // Assigned to
     const tdAssigned = document.createElement('td');
     tdAssigned.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
 
+    // Voice note
     const tdVoice = document.createElement('td');
     tdVoice.style.textAlign = 'center';
     if (task.voice_note_url) {
@@ -537,6 +546,7 @@ function renderAllTasksTable(tbody, tasks) {
       tdVoice.innerHTML = `<span class="media-none">—</span>`;
     }
 
+    // Attachment
     const tdAttach = document.createElement('td');
     tdAttach.style.textAlign = 'center';
     if (task.attachment_url) {
@@ -548,9 +558,11 @@ function renderAllTasksTable(tbody, tasks) {
       tdAttach.innerHTML = `<span class="media-none">—</span>`;
     }
 
+    // Priority
     const tdPriority = document.createElement('td');
     tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
 
+    // Status (with verification badge if applicable)
     const tdStatus = document.createElement('td');
     let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
     if (task.verification_status === 'Pending Verification') {
@@ -562,6 +574,7 @@ function renderAllTasksTable(tbody, tasks) {
     }
     tdStatus.innerHTML = statusHtml;
 
+    // Actions
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
     buildPrimaryStatusButtons(task, { showAssignee: true, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
@@ -586,6 +599,8 @@ async function loadMyTasks() {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+// renders "My tasks" as a table (desktop). Same columns as All Tasks, minus
+// "Assigned to" (it's always you), since this is the employee's own task list.
 function renderMyTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
@@ -596,17 +611,21 @@ function renderMyTasksTable(tbody, tasks) {
     const tr = document.createElement('tr');
     const statusClass = task.status.replace(/\s/g, '');
 
+    // Sr No
     const tdSr = document.createElement('td');
     tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
 
+    // Task details
     const tdDetails = document.createElement('td');
     tdDetails.className = 'task-name-cell';
     tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: false });
 
+    // Due date (calculated from created_at + hours, same as the card view)
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     tdDate.textContent = getDeadlineHtml(task, false);
 
+    // Voice note
     const tdVoice = document.createElement('td');
     tdVoice.style.textAlign = 'center';
     if (task.voice_note_url) {
@@ -618,6 +637,7 @@ function renderMyTasksTable(tbody, tasks) {
       tdVoice.innerHTML = `<span class="media-none">—</span>`;
     }
 
+    // Attachment
     const tdAttach = document.createElement('td');
     tdAttach.style.textAlign = 'center';
     if (task.attachment_url) {
@@ -629,9 +649,11 @@ function renderMyTasksTable(tbody, tasks) {
       tdAttach.innerHTML = `<span class="media-none">—</span>`;
     }
 
+    // Priority
     const tdPriority = document.createElement('td');
     tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
 
+    // Status (with verification badge if applicable)
     const tdStatus = document.createElement('td');
     let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
     if (task.verification_status === 'Pending Verification') {
@@ -643,6 +665,7 @@ function renderMyTasksTable(tbody, tasks) {
     }
     tdStatus.innerHTML = statusHtml;
 
+    // Actions
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
     buildPrimaryStatusButtons(task, { showAssignee: false, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
@@ -653,7 +676,7 @@ function renderMyTasksTable(tbody, tasks) {
   });
 }
 
-// ─── shared task card rendering ───────────────────────────────────────────────
+// ─── shared task card rendering (My Tasks / Verifications) ───────────────────
 function renderTaskList(container, tasks, { showAssignee, allowActions, verificationMode = false }) {
   if (!tasks || tasks.length === 0) {
     container.innerHTML = `<div class="empty-state"><span class="emoji">📭</span>No tasks found</div>`;
@@ -792,6 +815,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
   }
   const actionsEl = card.querySelector('.task-actions');
   if (verificationMode) {
+    // Two-step: "Start Verification" → then Verify or Send for Correction
     const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
       actionsEl.innerHTML = '';
       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
@@ -858,7 +882,9 @@ els.verifyForm.addEventListener('submit', async (e) => {
   } catch (err) { els.verifyFormMsg.textContent = err.message; els.verifyFormMsg.hidden = false; }
 });
 
-// ─── Verifier two-step flow ───────────────────────────────────────────────────
+// ─── Verifier two-step flow: Start → Verify OR Send for Correction ───────────
+// Called when verifier clicks "Start Verification" on a card/row.
+// We toggle the card's action area to show the two choice buttons.
 function startVerificationInline(taskId, actionsEl) {
   actionsEl.innerHTML = '';
   actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
@@ -875,7 +901,7 @@ async function verifyApprove(taskId) {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
-// ─── Correction Modal ─────────────────────────────────────────────────────────
+// ─── Correction Modal (verifier sends correction note + optional voice) ────────
 let corrVoiceBlob = null;
 let corrMediaRecorder = null;
 
@@ -899,6 +925,7 @@ function stopCorrectionRecordingAndClose() {
   els.correctionModal.hidden = true;
 }
 
+// Voice recording for correction modal
 els.corrStartRecord.addEventListener('click', async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -963,7 +990,6 @@ async function loadVerifications() {
 }
 
 // ─── Corrections view (employee) ──────────────────────────────────────────────
-// FIX: null-safe guards on correctionsTableBody and correctionsList
 async function loadCorrections() {
   if (els.correctionsTableBody) {
     els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
@@ -971,15 +997,7 @@ async function loadCorrections() {
   if (els.correctionsList) {
     els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
   }
-  try {
-    const allTasks = await api('/tasks/my');
-    const corrections = allTasks.filter((t) => t.verification_status === 'Verification Rejected');
-    renderCorrectionsTable(corrections);
-    renderCorrectionsList(corrections);
-  } catch (err) { showToast(err.message, 'error'); }
-}
-
-// FIX: early return if tbody is null
+// Desktop table view — same data as the card view below, just laid out as rows.
 function renderCorrectionsTable(tasks) {
   const tbody = els.correctionsTableBody;
   if (!tbody) return;
@@ -988,6 +1006,7 @@ function renderCorrectionsTable(tasks) {
     return;
   }
   tbody.innerHTML = '';
+
   tasks.forEach((task, index) => {
     const tr = document.createElement('tr');
 
@@ -1025,7 +1044,6 @@ function renderCorrectionsTable(tasks) {
 }
 
 function renderCorrectionsList(tasks) {
-  if (!els.correctionsList) return;
   if (!tasks.length) {
     els.correctionsList.innerHTML = `<div class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</div>`;
     return;
@@ -1060,7 +1078,7 @@ function renderCorrectionsList(tasks) {
   });
 }
 
-// Resend for verification
+// Resend for verification (employee after correction — verifier is already known)
 function openResendVerifyModal(task) {
   state.pendingTaskId = task.id;
   state.pendingVerifierId = task.verifier?.id ?? null;
@@ -1099,21 +1117,27 @@ function renderVerificationsTable(tbody, tasks) {
   tasks.forEach((task, index) => {
     const tr = document.createElement('tr');
 
+    // Request ID
     const tdReqId = document.createElement('td');
     tdReqId.innerHTML = `<span class="sr-number">#${task.id}</span>`;
 
+    // Task Sr No
     const tdSr = document.createElement('td');
     tdSr.textContent = index + 1;
 
+    // Project
     const tdProject = document.createElement('td');
     tdProject.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.project?.name ?? '—')}</strong>`;
 
+    // Task Type
     const tdTaskType = document.createElement('td');
     tdTaskType.textContent = task.task_type?.name ?? '—';
 
+    // Submitted By (person who did the task and sent for verification)
     const tdSubmittedBy = document.createElement('td');
     tdSubmittedBy.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
 
+    // Attachments
     const tdAttach = document.createElement('td');
     tdAttach.style.textAlign = 'center';
     const links = [];
@@ -1125,10 +1149,12 @@ function renderVerificationsTable(tbody, tasks) {
     }
     tdAttach.innerHTML = links.length ? links.join(' ') : `<span class="media-none">—</span>`;
 
+    // Submission date
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     tdDate.textContent = fmtDate(task.verification_requested_at ?? task.updated_at ?? task.created_at);
 
+    // Actions — "Start Verification" → then Verify or Send for Correction
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
     const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
@@ -1308,6 +1334,7 @@ function renderEmployeesTable(employees) {
   });
 }
 
+// renders the "Manage employees" view as cards (shown on mobile)
 function renderEmployeesCards(employees) {
   if (!employees.length) {
     els.employeesCards.innerHTML = `<div class="empty-state"><span class="emoji">👥</span>No employees yet</div>`;
@@ -1410,7 +1437,7 @@ els.employeeForm.addEventListener('submit', async (e) => {
 els.closeCredsModal.addEventListener('click', () => { els.credsModal.hidden = true; });
 els.closeCredsModalBtn.addEventListener('click', () => { els.credsModal.hidden = true; });
 
-// ─── Edit employee ────────────────────────────────────────────────────────────
+// ─── Edit employee (designation + role + department + optional new password) ─
 function openEditEmployeeModal(emp) {
   els.editEmployeeFormMsg.hidden = true;
   els.editEmpId.value = emp.id;
@@ -1451,7 +1478,7 @@ els.editEmployeeForm.addEventListener('submit', async (e) => {
   } catch (err) { els.editEmployeeFormMsg.textContent = err.message; els.editEmployeeFormMsg.hidden = false; }
 });
 
-// ─── Permissions ──────────────────────────────────────────────────────────────
+// ─── Permissions (admin only) ──────────────────────────────────────────────────
 async function loadPermissions() {
   els.permissionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading employees…</td></tr>`;
   try {
@@ -1615,6 +1642,7 @@ if (state.token && state.user) { enterApp(); }
 
 // ─── RECURRING TASKS ──────────────────────────────────────────────────────────
 
+// Elem references (recurring modal)
 const recEls = {
   modal:         () => document.getElementById('recurringModal'),
   modalTitle:    () => document.getElementById('recurringModalTitle'),
@@ -1647,6 +1675,7 @@ const recEls = {
 let recurringSelectedFreq = '';
 
 function initRecurringModal() {
+  // Frequency buttons
   document.querySelectorAll('.freq-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
@@ -1656,21 +1685,23 @@ function initRecurringModal() {
     });
   });
 
+  // Add checkpoint
   document.getElementById('addCheckpointBtn').addEventListener('click', () => {
     addCheckpointRow('');
   });
 
+  // Save button
   recEls.saveBtn().addEventListener('click', saveRecurringTask);
 
+  // Close/cancel
   document.getElementById('closeRecurringModal').addEventListener('click', closeRecurringModal);
   document.getElementById('cancelRecurringModal').addEventListener('click', closeRecurringModal);
 
-  // FIX: only attach openBtn listener if element exists (admin only)
-  const openBtn = recEls.openBtn();
-  if (openBtn) {
-    openBtn.addEventListener('click', () => openRecurringModal(null));
-  }
+  // Open Add button (admin only)
+  recEls.openBtn().addEventListener('click', () => openRecurringModal(null));
 
+  // Task type changed → either open the inline "add new" row, or
+  // auto-load that type's saved checkpoint template.
   recEls.taskType().addEventListener('change', async () => {
     const taskTypeId = recEls.taskType().value;
 
@@ -1679,6 +1710,8 @@ function initRecurringModal() {
       recEls.newTaskTypeInput().value = '';
       recEls.newTaskTypeRow().hidden = false;
       recEls.newTaskTypeInput().focus();
+      // Reset selection back to placeholder so "+ Add new task type…"
+      // doesn't stay selected as if it were a real task type.
       recEls.taskType().value = '';
       return;
     }
@@ -1711,6 +1744,10 @@ function initRecurringModal() {
   });
 }
 
+// Adds a new task type from inside the recurring-task modal, then refreshes
+// every task-type dropdown in the app (including this modal's) and selects
+// the freshly created type so the admin can keep going without re-opening
+// the modal.
 async function saveNewTaskTypeFromModal() {
   const name = recEls.newTaskTypeInput().value.trim();
   recEls.taskTypeMsg().hidden = true;
@@ -1722,6 +1759,7 @@ async function saveNewTaskTypeFromModal() {
   recEls.newTaskTypeSave().disabled = true;
   try {
     await api('/master/task-types', { method: 'POST', body: { name } });
+    // Refresh master task types everywhere (admin add-task form, filters, this modal)
     const taskTypes = await api('/master/task-types');
     state.master.taskTypes = taskTypes;
     fillSelect(els.fTaskType, taskTypes, { placeholder: 'Select task type' });
@@ -1766,9 +1804,11 @@ function openRecurringModal(task) {
   recEls.weeklyField().hidden = true;
   recEls.newTaskTypeRow().hidden = true;
   recEls.taskTypeMsg().hidden = true;
+  // uncheck all days
   document.querySelectorAll('#weeklyDaysField input[type=checkbox]').forEach(c => c.checked = false);
 
   if (task) {
+    // Edit mode
     recEls.modalTitle().textContent = '✏️ Edit Recurring Task';
     recEls.saveBtn().textContent = 'Save Changes';
     recEls.editId().value = task.id;
@@ -1780,6 +1820,7 @@ function openRecurringModal(task) {
     if (task.project?.id) recEls.project().value = task.project.id;
     if (task.task_type?.id) recEls.taskType().value = task.task_type.id;
     if (task.assigned_to_user?.id) recEls.employee().value = task.assigned_to_user.id;
+    // Frequency
     recurringSelectedFreq = task.frequency || '';
     const freqBtn = document.querySelector(`.freq-btn[data-freq="${recurringSelectedFreq}"]`);
     if (freqBtn) freqBtn.classList.add('selected');
@@ -1790,10 +1831,12 @@ function openRecurringModal(task) {
         c.checked = days.includes(Number(c.value));
       });
     }
+    // Checkpoints
     (task.checkpoints || [])
       .sort((a, b) => a.sort_order - b.sort_order)
       .forEach(cp => addCheckpointRow(cp.label));
   } else {
+    // Create mode
     recEls.modalTitle().textContent = '🔁 Create Recurring Task';
     recEls.saveBtn().textContent = 'Create Recurring Task';
     recEls.editId().value = '';
@@ -1875,21 +1918,13 @@ async function saveRecurringTask() {
   }
 }
 
-// FIX: null-safe checks for openBtn, adminWrap, empWrap
 async function loadRecurringView() {
   const isAdmin = state.user.role === 'admin';
   if (recEls.openBtn()) recEls.openBtn().hidden = !isAdmin;
   if (recEls.adminWrap()) recEls.adminWrap().hidden = !isAdmin;
   if (recEls.empWrap()) recEls.empWrap().hidden = isAdmin;
+// ─── Admin view ───────────────────────────────────────────────────────────────
 
-  if (isAdmin) {
-    await loadAdminRecurringTasks();
-  } else {
-    await loadEmployeeRecurringTasks();
-  }
-}
-
-// ─── Admin recurring view ─────────────────────────────────────────────────────
 async function loadAdminRecurringTasks() {
   const tbody = recEls.adminTable();
   tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading…</td></tr>`;
@@ -1980,7 +2015,8 @@ async function deleteRecurringTask(task) {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
-// ─── Employee recurring view ──────────────────────────────────────────────────
+// ─── Employee view ────────────────────────────────────────────────────────────
+
 async function loadEmployeeRecurringTasks() {
   const wrap = recEls.empList();
   wrap.innerHTML = `<div class="empty-state">Loading your recurring tasks…</div>`;
@@ -1998,6 +2034,11 @@ function renderEmployeeRecurringList(tasks) {
   }
   wrap.innerHTML = '';
 
+  // Today's tasks split into "still to do" vs "already completed today" —
+  // a completed task drops out of the active list so the employee isn't
+  // staring at a checklist they already finished. It'll reappear here
+  // automatically on its next due date once the backend creates a fresh
+  // instance for that date.
   const dueToday = tasks.filter(t => t.fires_today);
   const activeToday = dueToday.filter(t => t.today_instance?.status !== 'Completed');
   const completedToday = dueToday.filter(t => t.today_instance?.status === 'Completed');
@@ -2087,6 +2128,7 @@ function buildEmployeeRecurringCard(task) {
     </div>` : ''}
   `;
 
+  // Attach checkbox handlers
   card.querySelectorAll('.cp-checkbox').forEach(cb => {
     cb.addEventListener('change', async (e) => {
       const label = e.target.closest('label');
@@ -2099,6 +2141,7 @@ function buildEmployeeRecurringCard(task) {
           `/recurring-tasks/instances/${instanceId}/checkpoints/${checkpointId}/toggle`,
           { method: 'POST' }
         );
+        // Refresh the whole list to reflect new state
         const tasks = await api('/recurring-tasks/my');
         renderEmployeeRecurringList(tasks);
         if (updated.status === 'Completed') showToast('All checkpoints done — task completed! ✅', 'success');
@@ -2118,6 +2161,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initRecurringModal();
 });
 
+// Fills the Department/Employee/Task Type/Project selects inside the
+// recurring-task modal from state.master. Called directly from
+// loadMasterData() once master data has loaded (not via monkey-patching —
+// that previously broke silently if this file loaded after the dropdowns
+// were first read).
 function fillRecurringDropdowns() {
   if (!state.master) return;
   fillSelect(recEls.department(), state.master.departments, { placeholder: 'Select Department' });
