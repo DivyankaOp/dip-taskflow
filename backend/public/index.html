@@ -395,6 +395,15 @@
           <div id="ticketsList" class="ticket-list" style="margin-top:20px"></div>
         </section>
 
+        <!-- CORRECTIONS -->
+        <section id="view-corrections" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">↩ Corrections</h2>
+            <p class="view-sub">Tasks sent back to you — review the note and resubmit for verification.</p>
+          </div>
+          <div id="correctionsList" class="task-list" style="margin-top:20px"></div>
+        </section>
+
       </main>
     </div>
   </section>
@@ -587,6 +596,11 @@
           <label for="verify-person">Send to <span class="req">*</span></label>
           <select id="verify-person" required><option value="">Select a verifier</option></select>
         </div>
+        <div class="field">
+          <label for="verify-files">Attach files <span class="optional">(max 3, optional)</span></label>
+          <input id="verify-files" type="file" multiple accept="*/*" />
+          <span class="form-note">Hold Ctrl / Cmd to select multiple files</span>
+        </div>
         <p id="verifyFormMsg" class="form-error" hidden></p>
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelVerifyModal">Cancel</button>
@@ -655,6 +669,61 @@
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelReassignModal">Cancel</button>
           <button type="submit" class="primary-btn primary-btn-inline">Reassign</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Correction Modal (verifier → employee) -->
+  <div id="correctionModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>↩ Send for Correction</h3>
+        <button class="modal-close" id="closeCorrectionModal">&times;</button>
+      </div>
+      <form id="correctionForm" class="modal-body">
+        <div class="field">
+          <label for="correction-note">Correction note <span class="req">*</span></label>
+          <textarea id="correction-note" rows="4" placeholder="Describe what needs to be corrected…" required></textarea>
+        </div>
+        <div class="field">
+          <label>Voice note <span class="optional">(optional)</span></label>
+          <div class="voice-recorder-wrap" id="corrVoiceRecorderWrap">
+            <div class="voice-recorder-btns">
+              <button type="button" id="corrStartRecord" class="ghost-btn-text">🎤 Start recording</button>
+              <button type="button" id="corrStopRecord" class="ghost-btn-text" disabled style="color:#e53e3e">⏹ Stop</button>
+            </div>
+            <span id="corrRecordStatus" class="form-note"></span>
+            <audio id="corrVoicePlayback" controls hidden style="margin-top:8px;width:100%"></audio>
+          </div>
+        </div>
+        <p id="correctionFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelCorrectionModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Send Correction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Resend Verification Modal (employee after correction) -->
+  <div id="resendVerifyModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Resend for Verification</h3>
+        <button class="modal-close" id="closeResendVerifyModal">&times;</button>
+      </div>
+      <form id="resendVerifyForm" class="modal-body">
+        <p class="form-note" style="margin-bottom:12px">Sending back to: <strong id="resendVerifierName">—</strong></p>
+        <div class="field">
+          <label for="resend-files">Attach files <span class="optional">(max 3)</span></label>
+          <input id="resend-files" type="file" multiple accept="*/*" />
+          <span class="form-note">Hold Ctrl / Cmd to select multiple files</span>
+        </div>
+        <p id="resendVerifyFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelResendVerifyModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Resend for Verification</button>
         </div>
       </form>
     </div>
