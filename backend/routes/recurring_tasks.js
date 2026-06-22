@@ -1,328 +1,483 @@
-const express = require('express');
-const supabase = require('../lib/supabaseClient');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+// State for recurring modal
+let recurringSelectedFreq = '';
+let recurringEditingId = null;
 
-const router = express.Router();
-router.use(requireAuth);
+// Task-type checkpoint templates: { taskTypeId -> [{ id?, label }] }
+// Stored in memory per session; persisted to backend as recurring_task_checkpoints
+let taskTypeCheckpointTemplates = {};
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── Task Type Dropdown with "+ Add" ─────────────────────────────────────────
 
-const RT_SELECT = `
-  id, description, priority, frequency, frequency_days,
-  start_date, end_date, is_active, created_at,
-  department:departments ( id, name ),
-  project:projects ( id, name ),
-  task_type:task_types ( id, name ),
-  assigned_to_user:users!recurring_tasks_assigned_to_fkey ( id, full_name ),
-  assigned_by_user:users!recurring_tasks_assigned_by_fkey ( id, full_name ),
-  checkpoints:recurring_task_checkpoints ( id, label, sort_order )
-`;
-
-// Given a recurring task + today's date, figure out whether an instance
-// should exist today and return/create it with checkpoint completion state.
-async function getOrCreateTodayInstance(recurringTaskId, dueDate) {
-  const dueDateStr = dueDate.toISOString().slice(0, 10);
-
-  // upsert-style: try to get existing first
-  let { data: instance, error } = await supabase
-    .from('recurring_task_instances')
-    .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
-    .eq('recurring_task_id', recurringTaskId)
-    .eq('due_date', dueDateStr)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  if (!instance) {
-    const { data: newInst, error: createErr } = await supabase
-      .from('recurring_task_instances')
-      .insert({ recurring_task_id: recurringTaskId, due_date: dueDateStr, status: 'Pending' })
-      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
-      .single();
-    if (createErr) throw createErr;
-    instance = newInst;
-  }
-
-  return instance;
+function fillRecurringTaskTypeDropdown(taskTypes) {
+  const sel = document.getElementById('rec-tasktype');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const blank = document.createElement('option');
+  blank.value = ''; blank.textContent = 'Select Task Type';
+  sel.appendChild(blank);
+  taskTypes.forEach(tt => {
+    const opt = document.createElement('option');
+    opt.value = tt.id; opt.textContent = tt.name;
+    sel.appendChild(opt);
+  });
+  // "+ Add new task type" option
+  const addOpt = document.createElement('option');
+  addOpt.value = '__add__'; addOpt.textContent = '+ Add new task type…';
+  addOpt.style.color = '#7c3aed'; addOpt.style.fontWeight = '600';
+  sel.appendChild(addOpt);
 }
 
-// Is today a valid fire date for this task?
-function shouldFireToday(task, today) {
-  const start = new Date(task.start_date);
-  const end = task.end_date ? new Date(task.end_date) : null;
-  const todayDate = new Date(today.toISOString().slice(0, 10));
+// When task type changes in recurring modal, show its saved checkpoints
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'rec-tasktype') return;
+  const val = e.target.value;
 
-  if (todayDate < start) return false;
-  if (end && todayDate > end) return false;
+  if (val === '__add__') {
+    e.target.value = '';
+    const name = prompt('Enter new task type name:');
+    if (!name || !name.trim()) return;
+    try {
+      const created = await api('/master/task-types', { method: 'POST', body: { name: name.trim() } });
+      state.master.taskTypes = await api('/master/task-types');
+      fillRecurringTaskTypeDropdown(state.master.taskTypes);
+      // Also refresh main task type dropdowns
+      fillSelect(els.fTaskType, state.master.taskTypes, { placeholder: 'Select task type' });
+      document.getElementById('rec-tasktype').value = created.id;
+      showToast(`Task type "${created.name}" added ✅`, 'success');
+    } catch (err) { showToast(err.message, 'error'); }
+    return;
+  }
 
-  const freq = task.frequency;
-  if (freq === 'Daily') return true;
-  if (freq === 'Weekly') {
-    const days = (task.frequency_days || '').split(',').map(Number);
-    return days.includes(today.getDay());
+  // Load checkpoints for this task type if we haven't yet
+  if (val && !taskTypeCheckpointTemplates[val]) {
+    try {
+      const templates = await api(`/recurring-tasks/task-type-checkpoints/${val}`);
+      taskTypeCheckpointTemplates[val] = templates;
+    } catch (_) {
+      taskTypeCheckpointTemplates[val] = [];
+    }
   }
-  if (freq === 'Monthly') {
-    return today.getDate() === start.getDate();
-  }
-  if (freq === 'Yearly') {
-    return today.getDate() === start.getDate() && today.getMonth() === start.getMonth();
-  }
-  return false;
+
+  // Populate checkpoints list
+  const list = document.getElementById('checkpointsList');
+  if (!list) return;
+  list.innerHTML = '';
+  (taskTypeCheckpointTemplates[val] || []).forEach(cp => addCheckpointRow(cp.label, cp.id));
+});
+
+// ─── Checkpoint rows ──────────────────────────────────────────────────────────
+
+function addCheckpointRow(value, templateId) {
+  const list = document.getElementById('checkpointsList');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'checkpoint-row';
+  row.dataset.templateId = templateId || '';
+  row.innerHTML = `
+    <span class="cp-drag-handle">⠿</span>
+    <input type="text" class="checkpoint-input" placeholder="e.g. Check site boundary…" value="${escapeHtml(value)}" />
+    <button type="button" class="cp-remove ghost-btn-text" style="color:#e53e3e" title="Remove">✕</button>
+  `;
+  row.querySelector('.cp-remove').addEventListener('click', () => row.remove());
+  list.appendChild(row);
 }
 
-// ─── Admin: create recurring task ──────────────────────────────────────────
-router.post('/', requireAdmin, async (req, res) => {
-  try {
-    const {
-      department_id, project_id, task_type_id,
-      assigned_to, description, priority,
-      frequency, frequency_days, start_date, end_date,
-      checkpoints = []
-    } = req.body || {};
+function getCheckpointValues() {
+  return [...document.querySelectorAll('.checkpoint-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+}
 
-    if (!assigned_to || !description || !frequency || !start_date) {
-      return res.status(400).json({ error: 'Please fill in all required fields' });
+// ─── Open / Close Recurring Modal ────────────────────────────────────────────
+
+function openRecurringModal(task) {
+  recurringEditingId = task ? task.id : null;
+  document.getElementById('recurringFormMsg').hidden = true;
+  document.getElementById('checkpointsList').innerHTML = '';
+  document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('weeklyDaysField').hidden = true;
+  document.querySelectorAll('#weeklyDaysField input[type=checkbox]').forEach(c => c.checked = false);
+
+  if (task) {
+    document.getElementById('recurringModalTitle').textContent = '✏️ Edit Recurring Task';
+    document.getElementById('saveRecurringBtn').textContent = 'Save Changes';
+    document.getElementById('rec-description').value = task.description || '';
+    document.getElementById('rec-start').value = task.start_date || '';
+    document.getElementById('rec-end').value   = task.end_date   || '';
+    if (task.department?.id)       document.getElementById('rec-department').value = task.department.id;
+    if (task.project?.id)          document.getElementById('rec-project').value    = task.project.id;
+    if (task.task_type?.id)        document.getElementById('rec-tasktype').value   = task.task_type.id;
+    if (task.assigned_to_user?.id) document.getElementById('rec-employee').value   = task.assigned_to_user.id;
+    recurringSelectedFreq = task.frequency || '';
+    const freqBtn = document.querySelector(`.freq-btn[data-freq="${recurringSelectedFreq}"]`);
+    if (freqBtn) freqBtn.classList.add('selected');
+    if (recurringSelectedFreq === 'Weekly') {
+      document.getElementById('weeklyDaysField').hidden = false;
+      const days = (task.frequency_days || '').split(',').map(Number);
+      document.querySelectorAll('#weeklyDaysField input[type=checkbox]')
+        .forEach(c => { c.checked = days.includes(Number(c.value)); });
     }
-    if (frequency === 'Weekly' && (!frequency_days || frequency_days.length === 0)) {
-      return res.status(400).json({ error: 'Please select at least one day for weekly tasks' });
-    }
-
-    const { data: rt, error } = await supabase
-      .from('recurring_tasks')
-      .insert({
-        department_id: department_id || null,
-        project_id: project_id || null,
-        task_type_id: task_type_id || null,
-        assigned_to,
-        assigned_by: req.user.id,
-        description,
-        priority: priority || 'Medium',
-        frequency,
-        frequency_days: frequency === 'Weekly'
-          ? (Array.isArray(frequency_days) ? frequency_days.join(',') : frequency_days)
-          : null,
-        start_date,
-        end_date: end_date || null,
-        is_active: true
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-
-    // Insert checkpoints
-    if (checkpoints.length > 0) {
-      const cpRows = checkpoints.map((label, i) => ({
-        recurring_task_id: rt.id,
-        label: label.trim(),
-        sort_order: i
-      })).filter(r => r.label);
-
-      if (cpRows.length) {
-        const { error: cpErr } = await supabase
-          .from('recurring_task_checkpoints')
-          .insert(cpRows);
-        if (cpErr) throw cpErr;
-      }
-    }
-
-    // Return full task
-    const { data: full, error: fullErr } = await supabase
-      .from('recurring_tasks')
-      .select(RT_SELECT)
-      .eq('id', rt.id)
-      .single();
-    if (fullErr) throw fullErr;
-
-    res.status(201).json(full);
-  } catch (err) {
-    console.error('Create recurring task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not create recurring task' });
+    (task.checkpoints || [])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .forEach(cp => addCheckpointRow(cp.label, cp.id));
+  } else {
+    document.getElementById('recurringModalTitle').textContent = '🔁 Create Recurring Task';
+    document.getElementById('saveRecurringBtn').textContent   = 'Next →';
+    document.getElementById('rec-description').value = '';
+    document.getElementById('rec-department').value  = '';
+    document.getElementById('rec-employee').value    = '';
+    document.getElementById('rec-tasktype').value    = '';
+    document.getElementById('rec-project').value     = '';
+    document.getElementById('rec-start').value       = '';
+    document.getElementById('rec-end').value         = '';
+    recurringSelectedFreq = '';
+    recurringEditingId = null;
   }
-});
 
-// ─── Admin: list all recurring tasks ───────────────────────────────────────
-router.get('/all', requireAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('recurring_tasks')
-      .select(RT_SELECT)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    console.error('List recurring tasks error:', err.message);
-    res.status(500).json({ error: 'Could not load recurring tasks' });
+  document.getElementById('recurringModal').hidden = false;
+}
+
+function closeRecurringModal() {
+  document.getElementById('recurringModal').hidden = true;
+  document.getElementById('addChecklistPrompt').hidden = true;
+  recurringEditingId = null;
+}
+
+// ─── Save Recurring Task (step 1: form → step 2: checklist prompt) ───────────
+
+let _pendingRecurringBody = null; // holds form data between steps
+
+async function saveRecurringTask() {
+  document.getElementById('recurringFormMsg').hidden = true;
+  const isEdit = !!recurringEditingId;
+
+  const assignedTo = document.getElementById('rec-employee').value;
+  const description = document.getElementById('rec-description').value.trim();
+  const startDate   = document.getElementById('rec-start').value;
+
+  if (!assignedTo)   { showRecurringError('Please select an employee'); return; }
+  if (!description)  { showRecurringError('Please enter a task description'); return; }
+  if (!recurringSelectedFreq) { showRecurringError('Please select a frequency'); return; }
+  if (!startDate)    { showRecurringError('Please select a start date'); return; }
+
+  const freqDays = [];
+  if (recurringSelectedFreq === 'Weekly') {
+    document.querySelectorAll('#weeklyDaysField input[type=checkbox]:checked')
+      .forEach(c => freqDays.push(Number(c.value)));
+    if (!freqDays.length) { showRecurringError('Please select at least one day'); return; }
   }
-});
 
-// ─── Employee: my recurring tasks (with today's instance + checkpoint state) ─
-router.get('/my', async (req, res) => {
-  try {
-    const today = new Date();
+  const checkpoints = getCheckpointValues();
 
-    const { data: tasks, error } = await supabase
-      .from('recurring_tasks')
-      .select(RT_SELECT)
-      .eq('assigned_to', req.user.id)
-      .eq('is_active', true);
-    if (error) throw error;
+  _pendingRecurringBody = {
+    assigned_to:   assignedTo,
+    department_id: document.getElementById('rec-department').value || null,
+    project_id:    document.getElementById('rec-project').value    || null,
+    task_type_id:  document.getElementById('rec-tasktype').value   || null,
+    description,
+    priority: 'Medium',
+    frequency:      recurringSelectedFreq,
+    frequency_days: freqDays,
+    start_date:     startDate,
+    end_date:       document.getElementById('rec-end').value || null,
+    checkpoints
+  };
 
-    const result = [];
-    for (const task of tasks) {
-      const fires = shouldFireToday(task, today);
-      let todayInstance = null;
-
-      if (fires) {
-        todayInstance = await getOrCreateTodayInstance(task.id, today);
-      }
-
-      result.push({ ...task, fires_today: fires, today_instance: todayInstance });
-    }
-
-    res.json(result);
-  } catch (err) {
-    console.error('My recurring tasks error:', err.message);
-    res.status(500).json({ error: 'Could not load recurring tasks' });
-  }
-});
-
-// ─── Admin/Employee: update recurring task (admin only: details; anyone: toggle checkpoint) ──
-
-// Admin: edit recurring task
-router.patch('/:id', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const allowed = [
-      'department_id', 'project_id', 'task_type_id', 'assigned_to',
-      'description', 'priority', 'frequency', 'frequency_days',
-      'start_date', 'end_date', 'is_active'
-    ];
-    const updates = {};
-    for (const f of allowed) {
-      if (req.body[f] !== undefined) updates[f] = req.body[f];
-    }
-    if (updates.frequency_days && Array.isArray(updates.frequency_days)) {
-      updates.frequency_days = updates.frequency_days.join(',');
-    }
-
-    const { data, error } = await supabase
-      .from('recurring_tasks')
-      .update(updates)
-      .eq('id', id)
-      .select(RT_SELECT)
-      .single();
-    if (error) throw error;
-
-    // If checkpoints are provided, replace them
-    if (req.body.checkpoints !== undefined) {
-      await supabase.from('recurring_task_checkpoints').delete().eq('recurring_task_id', id);
-      if (req.body.checkpoints.length > 0) {
-        const cpRows = req.body.checkpoints.map((label, i) => ({
-          recurring_task_id: id,
-          label: typeof label === 'string' ? label.trim() : label.label?.trim(),
-          sort_order: i
-        })).filter(r => r.label);
-        if (cpRows.length) {
-          await supabase.from('recurring_task_checkpoints').insert(cpRows);
-        }
-      }
-    }
-
-    // Return updated full
-    const { data: full } = await supabase
-      .from('recurring_tasks').select(RT_SELECT).eq('id', id).single();
-    res.json(full);
-  } catch (err) {
-    console.error('Update recurring task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not update recurring task' });
-  }
-});
-
-// Admin: delete recurring task
-router.delete('/:id', requireAdmin, async (req, res) => {
-  try {
-    const { error } = await supabase
-      .from('recurring_tasks').delete().eq('id', req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Delete recurring task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not delete recurring task' });
-  }
-});
-
-// ─── Employee: toggle a checkpoint on today's instance ─────────────────────
-// POST /recurring-tasks/instances/:instanceId/checkpoints/:checkpointId/toggle
-router.post('/instances/:instanceId/checkpoints/:checkpointId/toggle', async (req, res) => {
-  try {
-    const { instanceId, checkpointId } = req.params;
-
-    // Verify the instance belongs to this user's task
-    const { data: inst, error: instErr } = await supabase
-      .from('recurring_task_instances')
-      .select('id, status, recurring_task_id, recurring_task_checkpoint_completions ( checkpoint_id )')
-      .eq('id', instanceId)
-      .single();
-    if (instErr) throw instErr;
-
-    // Check ownership
-    const { data: rt, error: rtErr } = await supabase
-      .from('recurring_tasks')
-      .select('assigned_to')
-      .eq('id', inst.recurring_task_id)
-      .single();
-    if (rtErr) throw rtErr;
-    if (rt.assigned_to !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Not your task' });
-    }
-
-    const completedIds = (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id);
-    const alreadyDone = completedIds.includes(checkpointId);
-
-    if (alreadyDone) {
-      // Uncheck
-      await supabase.from('recurring_task_checkpoint_completions')
-        .delete()
-        .eq('instance_id', instanceId)
-        .eq('checkpoint_id', checkpointId);
+  if (isEdit) {
+    // In edit mode, save directly
+    await doSaveRecurring(recurringEditingId, _pendingRecurringBody);
+  } else {
+    // In create mode — show "Add checklist?" prompt if no checkpoints yet
+    if (!checkpoints.length) {
+      document.getElementById('addChecklistPrompt').hidden = false;
+      document.getElementById('saveRecurringBtn').hidden = true;
     } else {
-      // Check
-      await supabase.from('recurring_task_checkpoint_completions')
-        .insert({ instance_id: instanceId, checkpoint_id: checkpointId });
+      // Already has checkpoints, save directly
+      await doSaveRecurring(null, _pendingRecurringBody);
     }
+  }
+}
 
-    // Now check if ALL checkpoints are done — if so, mark instance complete
-    const { data: allCheckpoints } = await supabase
-      .from('recurring_task_checkpoints')
-      .select('id')
-      .eq('recurring_task_id', inst.recurring_task_id);
+function showRecurringError(msg) {
+  const el = document.getElementById('recurringFormMsg');
+  el.textContent = msg; el.hidden = false;
+}
 
-    const { data: doneList } = await supabase
-      .from('recurring_task_checkpoint_completions')
-      .select('checkpoint_id')
-      .eq('instance_id', instanceId);
-
-    const allDone = allCheckpoints.length > 0 &&
-      doneList.length === allCheckpoints.length;
-
-    const newStatus = allDone ? 'Completed' : 'Pending';
-    const { data: updated, error: updateErr } = await supabase
-      .from('recurring_task_instances')
-      .update({
-        status: newStatus,
-        completed_at: allDone ? new Date().toISOString() : null
-      })
-      .eq('id', instanceId)
-      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
-      .single();
-    if (updateErr) throw updateErr;
-
-    res.json(updated);
+async function doSaveRecurring(editId, body) {
+  const btn = document.getElementById('saveRecurringBtn');
+  if (btn) btn.disabled = true;
+  try {
+    if (editId) {
+      await api(`/recurring-tasks/${editId}`, { method: 'PATCH', body });
+      showToast('Recurring task updated ✅', 'success');
+    } else {
+      await api('/recurring-tasks', { method: 'POST', body });
+      showToast('Recurring task created ✅', 'success');
+    }
+    closeRecurringModal();
+    loadRecurringView();
   } catch (err) {
-    console.error('Toggle checkpoint error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not toggle checkpoint' });
+    showRecurringError(err.message);
+  } finally {
+    if (btn) { btn.disabled = false; }
+  }
+}
+
+// ─── Checklist prompt handlers ────────────────────────────────────────────────
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'promptYesChecklist') {
+    // Hide prompt, reveal checkpoint area, restore Save btn
+    document.getElementById('addChecklistPrompt').hidden = true;
+    document.getElementById('saveRecurringBtn').hidden = false;
+    document.getElementById('saveRecurringBtn').textContent = 'Create Recurring Task';
+    document.getElementById('checkpointsSection').scrollIntoView({ behavior: 'smooth' });
+    addCheckpointRow('');
+    document.querySelector('.checkpoint-input')?.focus();
+  }
+  if (e.target.id === 'promptNoChecklist') {
+    // Save without checkpoints
+    document.getElementById('addChecklistPrompt').hidden = true;
+    document.getElementById('saveRecurringBtn').hidden = false;
+    await doSaveRecurring(null, _pendingRecurringBody);
   }
 });
 
-module.exports = router;
+// ─── View loading ─────────────────────────────────────────────────────────────
+
+async function loadRecurringView() {
+  const isAdmin = state.user.role === 'admin';
+  document.getElementById('openAddRecurring').hidden  = !isAdmin;
+  document.getElementById('adminRecurringWrap').hidden = !isAdmin;
+  document.getElementById('employeeRecurringWrap').hidden = isAdmin;
+
+  if (isAdmin) {
+    await loadAdminRecurringTasks();
+  } else {
+    await loadEmployeeRecurringTasks();
+  }
+}
+
+// ─── Admin table ──────────────────────────────────────────────────────────────
+
+async function loadAdminRecurringTasks() {
+  const tbody = document.getElementById('recurringTasksTableBody');
+  tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading…</td></tr>`;
+  document.getElementById('adminRecurringCards').innerHTML = `<div class="empty-state">Loading…</div>`;
+  try {
+    const tasks = await api('/recurring-tasks/all');
+    renderAdminRecurringTable(tasks);
+    renderAdminRecurringCards(tasks);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function freqLabel(task) {
+  if (task.frequency === 'Weekly' && task.frequency_days) {
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const days = task.frequency_days.split(',').map(Number).map(d => dayNames[d]).join(', ');
+    return `Weekly (${days})`;
+  }
+  return task.frequency || '—';
+}
+
+function renderAdminRecurringTable(tasks) {
+  const tbody = document.getElementById('recurringTasksTableBody');
+  if (!tasks.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No recurring tasks yet — click "+ Add recurring task" to create one</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach(task => {
+    const tr = document.createElement('tr');
+    const cpCount = (task.checkpoints || []).length;
+    const desc = (task.description || '').slice(0, 70) + ((task.description || '').length > 70 ? '…' : '');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>
+          <div style="font-size:11px;color:#888">${escapeHtml(task.department?.name ?? '')}</div></td>
+      <td style="max-width:180px">${escapeHtml(desc)}</td>
+      <td><span style="font-size:12px">${escapeHtml(freqLabel(task))}</span></td>
+      <td style="font-size:12px">${escapeHtml(task.start_date ?? '—')} →<br>${escapeHtml(task.end_date ?? 'ongoing')}</td>
+      <td>${cpCount ? `<span style="font-size:12px">✅ ${cpCount} checkpoint${cpCount>1?'s':''}</span>` : '<span style="color:#aaa;font-size:12px">None</span>'}</td>
+      <td><span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td class="row-actions"></td>
+    `;
+    const act = tr.lastElementChild;
+    const editBtn = document.createElement('button');
+    editBtn.className = 'action-btn action-accept'; editBtn.textContent = '✏️ Edit';
+    editBtn.addEventListener('click', () => openRecurringModal(task));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'action-btn action-reject'; delBtn.textContent = '🗑️ Delete';
+    delBtn.addEventListener('click', () => deleteRecurringTask(task));
+    act.append(editBtn, delBtn);
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAdminRecurringCards(tasks) {
+  const wrap = document.getElementById('adminRecurringCards');
+  if (!tasks.length) { wrap.innerHTML = `<div class="empty-state">No recurring tasks yet</div>`; return; }
+  wrap.innerHTML = '';
+  tasks.forEach(task => {
+    const cpCount = (task.checkpoints || []).length;
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.innerHTML = `
+      <div class="task-card-header">
+        <span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span>
+        <span style="font-size:12px;color:#888">${escapeHtml(freqLabel(task))}</span>
+      </div>
+      <div class="task-card-body">
+        <div class="task-detail-line"><span class="task-detail-label">Employee:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Task:</span> ${escapeHtml((task.description||'').slice(0,100))}${(task.description||'').length>100?'…':''}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Checkpoints:</span> ${cpCount ? cpCount : 'None'}</div>
+      </div>
+      <div class="task-card-actions">
+        <button class="action-btn action-accept edit-rec-btn">✏️ Edit</button>
+        <button class="action-btn action-reject del-rec-btn">🗑️ Delete</button>
+      </div>
+    `;
+    card.querySelector('.edit-rec-btn').addEventListener('click', () => openRecurringModal(task));
+    card.querySelector('.del-rec-btn').addEventListener('click', () => deleteRecurringTask(task));
+    wrap.appendChild(card);
+  });
+}
+
+async function deleteRecurringTask(task) {
+  if (!confirm(`Delete recurring task "${(task.description||'').slice(0,50)}"?\nThis cannot be undone.`)) return;
+  try {
+    await api(`/recurring-tasks/${task.id}`, { method: 'DELETE' });
+    showToast('Deleted ✅', 'success');
+    loadRecurringView();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ─── Employee recurring task view ─────────────────────────────────────────────
+
+async function loadEmployeeRecurringTasks() {
+  const wrap = document.getElementById('employeeRecurringList');
+  wrap.innerHTML = `<div class="empty-state">Loading your recurring tasks…</div>`;
+  try {
+    const tasks = await api('/recurring-tasks/my');
+    renderEmployeeRecurringList(tasks);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderEmployeeRecurringList(tasks) {
+  const wrap = document.getElementById('employeeRecurringList');
+  if (!tasks.length) {
+    wrap.innerHTML = `<div class="empty-state">No recurring tasks assigned to you</div>`;
+    return;
+  }
+  wrap.innerHTML = '';
+  const today    = tasks.filter(t => t.fires_today);
+  const notToday = tasks.filter(t => !t.fires_today);
+
+  if (today.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label'; hdr.textContent = "Today's recurring tasks";
+    wrap.appendChild(hdr);
+    today.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+  if (notToday.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label';
+    hdr.style.marginTop = '24px';
+    hdr.textContent = 'Other recurring tasks (not due today)';
+    wrap.appendChild(hdr);
+    notToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+}
+
+function buildEmployeeRecurringCard(task) {
+  const card = document.createElement('div');
+  card.className = 'task-card';
+  const inst = task.today_instance;
+  const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
+  const completedIds = inst ? (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id) : [];
+  const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+  const instStatus = inst?.status === 'Completed' ? 'Completed' : null;
+
+  const status = !task.fires_today   ? 'Not today'
+    : instStatus === 'Completed'     ? 'Completed'
+    : checkpoints.length === 0       ? 'Due today'
+    : `${completedIds.length}/${checkpoints.length} done`;
+
+  const pillClass = allDone || instStatus === 'Completed' ? 'pill-Completed'
+    : !task.fires_today ? 'pill-Rejected' : 'pill-In-Progress';
+
+  let checkpointsHtml = '';
+  if (task.fires_today && checkpoints.length > 0) {
+    checkpointsHtml = `<div class="checkpoint-list" style="margin-top:12px">`;
+    checkpoints.forEach(cp => {
+      const done = completedIds.includes(cp.id);
+      checkpointsHtml += `
+        <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-instance="${inst?.id || ''}" data-cp="${cp.id}">
+          <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${!inst ? 'disabled' : ''} />
+          <span>${escapeHtml(cp.label)}</span>
+        </label>`;
+    });
+    checkpointsHtml += `</div>`;
+  }
+
+  card.innerHTML = `
+    <div class="task-card-header">
+      <span class="pill ${pillClass}">${escapeHtml(status)}</span>
+      <span style="font-size:12px;color:#888">${escapeHtml(freqLabel(task))}</span>
+    </div>
+    <div class="task-card-body">
+      <div style="font-weight:600;margin-bottom:6px">${escapeHtml(task.description ?? '')}</div>
+      ${task.project   ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
+      ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+      <div class="task-detail-line"><span class="task-detail-label">Schedule:</span> ${escapeHtml(freqLabel(task))} · ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
+      ${checkpointsHtml}
+      ${task.fires_today && checkpoints.length === 0 && instStatus !== 'Completed' ? `
+        <div class="task-card-actions" style="margin-top:10px">
+          <button class="action-btn action-accept mark-nodone-btn">✅ Mark as done</button>
+        </div>` : ''}
+    </div>
+  `;
+
+  // Checkbox toggle
+  card.querySelectorAll('.cp-checkbox').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
+      const lbl = e.target.closest('label');
+      const instanceId  = lbl.dataset.instance;
+      const checkpointId = lbl.dataset.cp;
+      if (!instanceId) return;
+      cb.disabled = true;
+      try {
+        const updated = await api(
+          `/recurring-tasks/instances/${instanceId}/checkpoints/${checkpointId}/toggle`,
+          { method: 'POST' }
+        );
+        const tasks2 = await api('/recurring-tasks/my');
+        renderEmployeeRecurringList(tasks2);
+        if (updated.status === 'Completed') showToast('All checkpoints done — task completed! ✅', 'success');
+      } catch (err) {
+        cb.disabled = false; cb.checked = !cb.checked;
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  return card;
+}
+
+// ─── Wire up modal events on DOMContentLoaded ─────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Frequency buttons
+  document.querySelectorAll('.freq-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      recurringSelectedFreq = btn.dataset.freq;
+      document.getElementById('weeklyDaysField').hidden = recurringSelectedFreq !== 'Weekly';
+    });
+  });
+
+  document.getElementById('addCheckpointBtn')?.addEventListener('click', () => addCheckpointRow(''));
+  document.getElementById('saveRecurringBtn')?.addEventListener('click', saveRecurringTask);
+  document.getElementById('closeRecurringModal')?.addEventListener('click', closeRecurringModal);
+  document.getElementById('cancelRecurringModal')?.addEventListener('click', closeRecurringModal);
+  document.getElementById('openAddRecurring')?.addEventListener('click', () => openRecurringModal(null));
+});
