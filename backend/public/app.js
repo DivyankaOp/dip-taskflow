@@ -991,22 +991,24 @@ async function loadVerifications() {
 
 // ─── Corrections view (employee) ──────────────────────────────────────────────
 async function loadCorrections() {
-  if (els.correctionsTableBody) {
-    els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
-  }
-  if (els.correctionsList) {
-    els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
-  }
+  els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
+  els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
+  try {
+    const allTasks = await api('/tasks/my');
+    const corrections = allTasks.filter((t) => t.verification_status === 'Verification Rejected');
+    renderCorrectionsTable(corrections);
+    renderCorrectionsList(corrections);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
 // Desktop table view — same data as the card view below, just laid out as rows.
 function renderCorrectionsTable(tasks) {
   const tbody = els.correctionsTableBody;
-  if (!tbody) return;
   if (!tasks.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
-
   tasks.forEach((task, index) => {
     const tr = document.createElement('tr');
 
@@ -1920,9 +1922,17 @@ async function saveRecurringTask() {
 
 async function loadRecurringView() {
   const isAdmin = state.user.role === 'admin';
-  if (recEls.openBtn()) recEls.openBtn().hidden = !isAdmin;
-  if (recEls.adminWrap()) recEls.adminWrap().hidden = !isAdmin;
-  if (recEls.empWrap()) recEls.empWrap().hidden = isAdmin;
+  recEls.openBtn().hidden = !isAdmin;
+  recEls.adminWrap().hidden = !isAdmin;
+  recEls.empWrap().hidden = isAdmin;
+
+  if (isAdmin) {
+    await loadAdminRecurringTasks();
+  } else {
+    await loadEmployeeRecurringTasks();
+  }
+}
+
 // ─── Admin view ───────────────────────────────────────────────────────────────
 
 async function loadAdminRecurringTasks() {
