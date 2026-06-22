@@ -782,7 +782,16 @@
         <div class="field-grid">
           <div class="field">
             <label for="rec-tasktype">Task Type <span class="optional">(Optional)</span></label>
-            <select id="rec-tasktype"><option value="">Select Task Type</option></select>
+            <div class="select-with-add">
+              <select id="rec-tasktype"><option value="">Select Task Type</option></select>
+              <button type="button" id="recAddTaskTypeBtn" class="ghost-btn-text" title="Add new task type">+ Add</button>
+            </div>
+            <div id="recNewTaskTypeRow" class="inline-add-row" hidden>
+              <input type="text" id="recNewTaskTypeInput" placeholder="New task type name…" />
+              <button type="button" id="recNewTaskTypeSave" class="primary-btn primary-btn-inline">Add</button>
+              <button type="button" id="recNewTaskTypeCancel" class="ghost-btn-text">Cancel</button>
+            </div>
+            <p id="recTaskTypeMsg" class="form-error" hidden></p>
           </div>
           <div class="field">
             <label for="rec-project">Project <span class="optional">(Optional)</span></label>
