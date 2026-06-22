@@ -20,7 +20,7 @@ const BUCKET = 'task-files';
 const TASK_SELECT = `
   id, description, hours_to_complete, target_date, priority,
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
-  accepted_at, rejected_at,
+  accepted_at, rejected_at, sent_for_verification_at, verified_at,
   verification_status, verification_note, verification_attachment_urls,
   correction_voice_url,
   project:projects ( id, name ),
@@ -316,6 +316,7 @@ router.patch(
           verification_status: 'Pending Verification',
           verification_note: null,
           correction_voice_url: null,
+          sent_for_verification_at: new Date().toISOString(),
           verification_attachment_urls: verification_attachment_urls.length ? verification_attachment_urls : null
         })
         .eq('id', id)
@@ -348,7 +349,7 @@ router.patch('/:id/verify', async (req, res) => {
     }
 
     const updates = approved
-      ? { verification_status: 'Verified', verification_note: note || null, status: 'Completed' }
+      ? { verification_status: 'Verified', verification_note: note || null, status: 'Completed', verified_at: new Date().toISOString() }
       : { verification_status: 'Verification Rejected', verification_note: note || null, status: 'In Progress' };
 
     const { data, error } = await supabase
@@ -482,6 +483,116 @@ router.patch('/:id/reassign', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Reassign task error:', err.message);
     res.status(500).json({ error: err.message || 'Could not reassign task' });
+  }
+});
+
+// ----------------------------- admin report -----------------------------
+// GET /tasks/report?range=day|week|month|custom&from=DATE&to=DATE
+router.get('/report', requireAdmin, async (req, res) => {
+  try {
+    const { range, from, to } = req.query;
+
+    let startDate, endDate;
+    const now = new Date();
+
+    if (range === 'day') {
+      startDate = new Date(now); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(now); endDate.setHours(23, 59, 59, 999);
+    } else if (range === 'week') {
+      const day = now.getDay();
+      startDate = new Date(now); startDate.setDate(now.getDate() - day); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(startDate); endDate.setDate(startDate.getDate() + 6); endDate.setHours(23, 59, 59, 999);
+    } else if (range === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (range === 'custom' && from && to) {
+      startDate = new Date(from); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(to);   endDate.setHours(23, 59, 59, 999);
+    } else {
+      // default: current month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    const { data: tasks, error } = await supabase
+      .from('tasks')
+      .select(`
+        id, description, status, priority,
+        created_at, accepted_at, sent_for_verification_at, verified_at, rejected_at,
+        hours_to_complete, target_date,
+        verification_status,
+        project:projects ( id, name ),
+        task_type:task_types ( id, name ),
+        department:departments ( id, name ),
+        assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
+        assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
+        verifier:users!tasks_verifier_id_fkey ( id, full_name )
+      `)
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Helper: diff in hours between two timestamps
+    function hrsBetween(a, b) {
+      if (!a || !b) return null;
+      return Math.round(((new Date(b) - new Date(a)) / 36e5) * 10) / 10;
+    }
+
+    // Enrich each task with computed time fields
+    const enriched = tasks.map(t => ({
+      ...t,
+      time_to_accept_hrs:   hrsBetween(t.created_at, t.accepted_at),
+      time_to_submit_hrs:   hrsBetween(t.accepted_at, t.sent_for_verification_at),
+      time_to_verify_hrs:   hrsBetween(t.sent_for_verification_at, t.verified_at),
+      total_cycle_hrs:      hrsBetween(t.created_at, t.verified_at || t.rejected_at)
+    }));
+
+    // Group by employee → project
+    const byEmployee = {};
+    for (const t of enriched) {
+      const empId   = t.assigned_to_user?.id   || 'unknown';
+      const empName = t.assigned_to_user?.full_name || 'Unknown';
+      const projId  = t.project?.id   || 'no-project';
+      const projName = t.project?.name || 'No project';
+
+      if (!byEmployee[empId]) {
+        byEmployee[empId] = { id: empId, name: empName, projects: {}, totalTasks: 0 };
+      }
+      const emp = byEmployee[empId];
+      emp.totalTasks++;
+
+      if (!emp.projects[projId]) {
+        emp.projects[projId] = { id: projId, name: projName, tasks: [] };
+      }
+      emp.projects[projId].tasks.push(t);
+    }
+
+    // Convert to array form + compute project-level summaries
+    const report = Object.values(byEmployee).map(emp => {
+      const projects = Object.values(emp.projects).map(proj => {
+        const tasks = proj.tasks;
+        const completed  = tasks.filter(t => t.status === 'Completed').length;
+        const pending    = tasks.filter(t => t.status === 'Pending').length;
+        const inProgress = tasks.filter(t => t.status === 'In Progress').length;
+        const rejected   = tasks.filter(t => t.status === 'Rejected').length;
+
+        const avgCycle = (() => {
+          const valid = tasks.map(t => t.total_cycle_hrs).filter(h => h !== null);
+          return valid.length ? Math.round((valid.reduce((a,b)=>a+b,0) / valid.length) * 10) / 10 : null;
+        })();
+
+        return { ...proj, tasks, summary: { total: tasks.length, completed, pending, inProgress, rejected, avgCycleHrs: avgCycle } };
+      });
+
+      return { ...emp, projects };
+    });
+
+    res.json({ range: range || 'month', from: startDate.toISOString(), to: endDate.toISOString(), report });
+  } catch (err) {
+    console.error('Report error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not generate report' });
   }
 });
 
