@@ -700,3 +700,43 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   .filter-field { width: 100%; }
   .filter-field select, .filter-field input[type="date"] { width: 100%; }
 }
+
+/* ================================================================
+   CORRECTIONS VIEW
+   ================================================================ */
+.correction-note-box {
+  background: #fff5f5;
+  border-left: 4px solid var(--rose, #e53e3e);
+  border-radius: 0 var(--r-sm, 6px) var(--r-sm, 6px) 0;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.correction-note-label {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+  margin-bottom: 4px;
+}
+.correction-note-text {
+  font-size: 0.9rem;
+  color: var(--ink, #1a202c);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* ================================================================
+   VOICE RECORDER (inside correction modal)
+   ================================================================ */
+.voice-recorder-wrap {
+  background: var(--canvas-alt, #f8f9fc);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--r-sm, 6px);
+  padding: 12px 14px;
+}
+.voice-recorder-btns {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.voice-recorder-btns button {
+  font-size: 0.85rem;
+}
