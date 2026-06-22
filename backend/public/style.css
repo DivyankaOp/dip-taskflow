@@ -876,3 +876,29 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 
 /* pill colours */
 .pill-Completed { background: #d1fae5; color: #065f46; }
+
+/* ── Report range buttons ── */
+.report-range-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.report-range-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.report-range-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.report-emp-header:hover {
+  background: #f1f5f9 !important;
+}
