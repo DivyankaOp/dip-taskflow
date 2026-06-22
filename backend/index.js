@@ -12,6 +12,8 @@ app.use('/api/tasks',     require('./routes/tasks'));
 app.use('/api/master',    require('./routes/master'));
 app.use('/api/employees', require('./routes/employees'));
 app.use('/api/sites',     require('./routes/sites'));
+app.use('/api/recurring-tasks', require('./routes/recurring_tasks'));
+app.use('/api/tickets',   require('./routes/tickets'));  // yeh bhi missing tha
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
