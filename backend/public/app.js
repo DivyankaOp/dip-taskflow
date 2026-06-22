@@ -335,6 +335,7 @@ function buildNav() {
     if (isAdmin) {
       els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
       els.navList.appendChild(makeNavButton('permissions', '🔐 Permissions'));
+      els.navList.appendChild(makeNavButton('reports', '📊 Reports'));
     }
   }
 
@@ -383,6 +384,7 @@ function switchView(viewKey) {
   if (viewKey === 'tickets')       loadTickets();
   if (viewKey === 'corrections')   loadCorrections();
   if (viewKey === 'recurring')     loadRecurringView();
+  if (viewKey === 'reports')       initReportsView();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -2263,4 +2265,153 @@ function fillRecurringDropdowns() {
     extraOption: { value: '__add_new__', label: '+ Add new task type…' }
   });
   fillSelect(recEls.project(), state.master.projects, { placeholder: 'Select Project' });
+}
+
+// ─── Reports (admin only) ────────────────────────────────────────────────────
+
+let reportState = { range: 'day', from: null, to: null };
+
+function initReportsView() {
+  // Bind range buttons
+  document.querySelectorAll('.report-range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.report-range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      reportState.range = btn.dataset.range;
+      const customDates = document.getElementById('reportCustomDates');
+      if (reportState.range === 'custom') {
+        customDates.style.display = 'flex';
+      } else {
+        customDates.style.display = 'none';
+      }
+    });
+  });
+
+  document.getElementById('loadReportBtn').onclick = loadReport;
+
+  // Load default (today) immediately on first open
+  if (!document.getElementById('reportContent')._loaded) {
+    document.getElementById('reportContent')._loaded = true;
+    loadReport();
+  }
+}
+
+async function loadReport() {
+  const content = document.getElementById('reportContent');
+  const summaryCards = document.getElementById('reportSummaryCards');
+  content.innerHTML = '<p style="color:var(--text-muted);padding:20px 0">Loading…</p>';
+  summaryCards.innerHTML = '';
+
+  try {
+    let url = `/tasks/report?range=${reportState.range}`;
+    if (reportState.range === 'custom') {
+      const from = document.getElementById('reportFrom').value;
+      const to   = document.getElementById('reportTo').value;
+      if (!from || !to) { showToast('Please select both from and to dates', 'error'); content.innerHTML = ''; return; }
+      url += `&from=${from}&to=${to}`;
+    }
+
+    const data = await api(url);
+
+    // Summary bar
+    let totalTasks = 0, totalCompleted = 0, totalInProgress = 0, totalPending = 0;
+    data.report.forEach(emp => {
+      emp.projects.forEach(proj => {
+        totalTasks     += proj.summary.total;
+        totalCompleted += proj.summary.completed;
+        totalInProgress+= proj.summary.inProgress;
+        totalPending   += proj.summary.pending;
+      });
+    });
+
+    const summaryData = [
+      { label: 'Total tasks', value: totalTasks, color: '#6366f1' },
+      { label: 'Completed',   value: totalCompleted, color: '#10b981' },
+      { label: 'In Progress', value: totalInProgress, color: '#f59e0b' },
+      { label: 'Pending',     value: totalPending, color: '#94a3b8' },
+      { label: 'Employees',   value: data.report.length, color: '#3b82f6' },
+    ];
+    summaryCards.innerHTML = summaryData.map(s => `
+      <div style="background:#fff;border-radius:10px;padding:14px 20px;min-width:130px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid ${s.color}">
+        <div style="font-size:22px;font-weight:700;color:${s.color}">${s.value}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${s.label}</div>
+      </div>`).join('');
+
+    if (data.report.length === 0) {
+      content.innerHTML = '<p style="color:var(--text-muted);padding:20px 0">No tasks found for this period.</p>';
+      return;
+    }
+
+    // Render accordion per employee
+    content.innerHTML = data.report.map((emp, ei) => `
+      <div class="report-emp-block" style="margin-bottom:16px;border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div class="report-emp-header" onclick="toggleReportEmp(${ei})" style="
+          background:var(--bg-alt);padding:14px 18px;cursor:pointer;display:flex;
+          justify-content:space-between;align-items:center;user-select:none">
+          <div>
+            <span style="font-weight:700;font-size:15px">👤 ${emp.name}</span>
+            <span style="margin-left:12px;font-size:12px;color:var(--text-muted)">${emp.totalTasks} task${emp.totalTasks !== 1 ? 's' : ''} · ${emp.projects.length} project${emp.projects.length !== 1 ? 's' : ''}</span>
+          </div>
+          <span id="reportEmpArrow${ei}" style="font-size:12px;color:var(--text-muted)">▼</span>
+        </div>
+        <div id="reportEmpBody${ei}" style="padding:0 18px 18px">
+          ${emp.projects.map(proj => `
+            <div style="margin-top:16px">
+              <div style="font-weight:600;font-size:13px;color:var(--primary);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+                🏗️ ${proj.name}
+                <span style="font-size:11px;background:var(--bg-alt);border-radius:20px;padding:2px 8px;color:var(--text-muted)">
+                  ${proj.summary.total} tasks · ✅ ${proj.summary.completed} · ⏳ ${proj.summary.inProgress} · 🕐 ${proj.summary.pending}
+                  ${proj.summary.avgCycleHrs !== null ? ` · avg cycle: <strong>${proj.summary.avgCycleHrs}h</strong>` : ''}
+                </span>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="data-table" style="font-size:12px;min-width:700px">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Task</th>
+                      <th>Status</th>
+                      <th>Created</th>
+                      <th title="Time from creation to employee accepting">⏱ Accept (hrs)</th>
+                      <th title="Time from accepting to sending for verification">⏱ Work (hrs)</th>
+                      <th title="Time from submission to verification complete">⏱ Verify (hrs)</th>
+                      <th title="Total from creation to completion">⏱ Total (hrs)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${proj.tasks.map((t, ti) => {
+                      const statusColor = {
+                        'Completed':'#10b981','In Progress':'#f59e0b',
+                        'Pending':'#94a3b8','Rejected':'#ef4444'
+                      }[t.status] || '#94a3b8';
+                      const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+                      const fmtHrs  = h => h !== null && h !== undefined ? `<span style="color:${h>8?'#ef4444':h>4?'#f59e0b':'#10b981'};font-weight:600">${h}h</span>` : '<span style="color:#ccc">—</span>';
+                      return `<tr>
+                        <td>${ti+1}</td>
+                        <td style="max-width:200px;white-space:normal">${t.description}</td>
+                        <td><span style="background:${statusColor}22;color:${statusColor};padding:2px 8px;border-radius:20px;font-weight:600;font-size:11px">${t.status}</span></td>
+                        <td style="white-space:nowrap">${fmtDate(t.created_at)}</td>
+                        <td>${fmtHrs(t.time_to_accept_hrs)}</td>
+                        <td>${fmtHrs(t.time_to_submit_hrs)}</td>
+                        <td>${fmtHrs(t.time_to_verify_hrs)}</td>
+                        <td>${fmtHrs(t.total_cycle_hrs)}</td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`).join('');
+  } catch (err) {
+    content.innerHTML = `<p style="color:#ef4444">${err.message}</p>`;
+  }
+}
+
+function toggleReportEmp(ei) {
+  const body  = document.getElementById(`reportEmpBody${ei}`);
+  const arrow = document.getElementById(`reportEmpArrow${ei}`);
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▶' : '▼';
 }
