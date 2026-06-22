@@ -2033,15 +2033,84 @@ async function deleteRecurringTask(task) {
 
 // ─── Employee view ────────────────────────────────────────────────────────────
 
+// async function loadEmployeeRecurringTasks() {
+//   const wrap = recEls.empList();
+//   wrap.innerHTML = `<div class="empty-state">Loading your recurring tasks…</div>`;
+//   try {
+//     const tasks = await api('/recurring-tasks/my');
+//     renderEmployeeRecurringList(tasks);
+//   } catch (err) { showToast(err.message, 'error'); }
+// }
+
 async function loadEmployeeRecurringTasks() {
   const wrap = recEls.empList();
+  const tbody = document.getElementById('employeeRecurringTableBody');
   wrap.innerHTML = `<div class="empty-state">Loading your recurring tasks…</div>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Loading…</td></tr>`;
   try {
     const tasks = await api('/recurring-tasks/my');
     renderEmployeeRecurringList(tasks);
+    renderEmployeeRecurringTable(tasks);
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+// Desktop table view — same data as the card list above, laid out as rows.
+function renderEmployeeRecurringTable(tasks) {
+  const tbody = document.getElementById('employeeRecurringTableBody');
+  if (!tbody) return;
+  if (!tasks.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No recurring tasks assigned to you</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task) => {
+    const tr = document.createElement('tr');
+    const inst = task.today_instance;
+    const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
+    const completedIds = inst
+      ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
+      : [];
+    const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+    const statusText = !task.fires_today ? 'Not today'
+      : inst?.status === 'Completed' ? 'Completed'
+      : checkpoints.length === 0 ? 'No checkpoints'
+      : `${completedIds.length}/${checkpoints.length} done`;
+    const pillClass = allDone ? 'pill-Completed'
+      : !task.fires_today ? 'pill-Rejected'
+      : 'pill-InProgress';
+
+    const tdTask = document.createElement('td');
+    tdTask.innerHTML = `
+      <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+      ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
+      ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+    `;
+
+    const tdFreq = document.createElement('td');
+    tdFreq.textContent = freqLabel(task);
+
+    const tdPeriod = document.createElement('td');
+    tdPeriod.style.whiteSpace = 'nowrap';
+    tdPeriod.style.fontSize = '0.8rem';
+    tdPeriod.textContent = `${task.start_date ?? '—'} → ${task.end_date ?? 'ongoing'}`;
+
+    const tdCheckpoints = document.createElement('td');
+    if (checkpoints.length === 0) {
+      tdCheckpoints.innerHTML = `<span style="color:#aaa">None</span>`;
+    } else {
+      tdCheckpoints.innerHTML = checkpoints.map((cp) => {
+        const done = completedIds.includes(cp.id);
+        return `<div class="task-detail-line" style="${done ? 'text-decoration:line-through;color:#9CA3AF' : ''}">${done ? '✅' : '⬜'} ${escapeHtml(cp.label)}</div>`;
+      }).join('');
+    }
+
+    const tdStatus = document.createElement('td');
+    tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
+
+    tr.append(tdTask, tdFreq, tdPeriod, tdCheckpoints, tdStatus);
+    tbody.appendChild(tr);
+  });
+}
 function renderEmployeeRecurringList(tasks) {
   const wrap = recEls.empList();
   if (!tasks.length) {
@@ -2158,8 +2227,11 @@ function buildEmployeeRecurringCard(task) {
           { method: 'POST' }
         );
         // Refresh the whole list to reflect new state
+        // const tasks = await api('/recurring-tasks/my');
+        // renderEmployeeRecurringList(tasks);
         const tasks = await api('/recurring-tasks/my');
-        renderEmployeeRecurringList(tasks);
+renderEmployeeRecurringList(tasks);
+renderEmployeeRecurringTable(tasks);
         if (updated.status === 'Completed') showToast('All checkpoints done — task completed! ✅', 'success');
       } catch (err) {
         cb.disabled = false;
