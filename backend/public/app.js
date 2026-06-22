@@ -1008,6 +1008,7 @@ async function loadCorrections() {
 // Desktop table view — same data as the card view below, just laid out as rows.
 function renderCorrectionsTable(tasks) {
   const tbody = els.correctionsTableBody;
+  if (!tbody) return;
   if (!tasks.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</td></tr>`;
     return;
