@@ -1920,19 +1920,20 @@ async function saveRecurringTask() {
   }
 }
 
+
 async function loadRecurringView() {
   const isAdmin = state.user.role === 'admin';
-  recEls.openBtn().hidden = !isAdmin;
-  recEls.adminWrap().hidden = !isAdmin;
-  recEls.empWrap().hidden = isAdmin;
+  const canManageRecurring = isAdmin || !!state.user.can_add_employee;
+  recEls.openBtn().hidden = !canManageRecurring;
+  recEls.adminWrap().hidden = !canManageRecurring;
+  recEls.empWrap().hidden = canManageRecurring;
 
-  if (isAdmin) {
+  if (canManageRecurring) {
     await loadAdminRecurringTasks();
   } else {
     await loadEmployeeRecurringTasks();
   }
 }
-
 // ─── Admin view ───────────────────────────────────────────────────────────────
 
 async function loadAdminRecurringTasks() {
