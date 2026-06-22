@@ -819,18 +819,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   border-color: #7c3aed;
 }
 
-/* Select with an inline "+ Add" action, e.g. Task Type in recurring modal */
-.select-with-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.select-with-add select { flex: 1; }
-.select-with-add .ghost-btn-text {
-  white-space: nowrap;
-  padding: 9px 14px;
-  font-size: 0.8rem;
-}
+/* Inline "add new" row, e.g. Task Type in recurring modal */
 .inline-add-row {
   display: flex;
   align-items: center;
