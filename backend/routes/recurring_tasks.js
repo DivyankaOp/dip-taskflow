@@ -1,0 +1,328 @@
+const express = require('express');
+const supabase = require('../lib/supabaseClient');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+
+const router = express.Router();
+router.use(requireAuth);
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+const RT_SELECT = `
+  id, description, priority, frequency, frequency_days,
+  start_date, end_date, is_active, created_at,
+  department:departments ( id, name ),
+  project:projects ( id, name ),
+  task_type:task_types ( id, name ),
+  assigned_to_user:users!recurring_tasks_assigned_to_fkey ( id, full_name ),
+  assigned_by_user:users!recurring_tasks_assigned_by_fkey ( id, full_name ),
+  checkpoints:recurring_task_checkpoints ( id, label, sort_order )
+`;
+
+// Given a recurring task + today's date, figure out whether an instance
+// should exist today and return/create it with checkpoint completion state.
+async function getOrCreateTodayInstance(recurringTaskId, dueDate) {
+  const dueDateStr = dueDate.toISOString().slice(0, 10);
+
+  // upsert-style: try to get existing first
+  let { data: instance, error } = await supabase
+    .from('recurring_task_instances')
+    .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+    .eq('recurring_task_id', recurringTaskId)
+    .eq('due_date', dueDateStr)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!instance) {
+    const { data: newInst, error: createErr } = await supabase
+      .from('recurring_task_instances')
+      .insert({ recurring_task_id: recurringTaskId, due_date: dueDateStr, status: 'Pending' })
+      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+      .single();
+    if (createErr) throw createErr;
+    instance = newInst;
+  }
+
+  return instance;
+}
+
+// Is today a valid fire date for this task?
+function shouldFireToday(task, today) {
+  const start = new Date(task.start_date);
+  const end = task.end_date ? new Date(task.end_date) : null;
+  const todayDate = new Date(today.toISOString().slice(0, 10));
+
+  if (todayDate < start) return false;
+  if (end && todayDate > end) return false;
+
+  const freq = task.frequency;
+  if (freq === 'Daily') return true;
+  if (freq === 'Weekly') {
+    const days = (task.frequency_days || '').split(',').map(Number);
+    return days.includes(today.getDay());
+  }
+  if (freq === 'Monthly') {
+    return today.getDate() === start.getDate();
+  }
+  if (freq === 'Yearly') {
+    return today.getDate() === start.getDate() && today.getMonth() === start.getMonth();
+  }
+  return false;
+}
+
+// ─── Admin: create recurring task ──────────────────────────────────────────
+router.post('/', requireAdmin, async (req, res) => {
+  try {
+    const {
+      department_id, project_id, task_type_id,
+      assigned_to, description, priority,
+      frequency, frequency_days, start_date, end_date,
+      checkpoints = []
+    } = req.body || {};
+
+    if (!assigned_to || !description || !frequency || !start_date) {
+      return res.status(400).json({ error: 'Please fill in all required fields' });
+    }
+    if (frequency === 'Weekly' && (!frequency_days || frequency_days.length === 0)) {
+      return res.status(400).json({ error: 'Please select at least one day for weekly tasks' });
+    }
+
+    const { data: rt, error } = await supabase
+      .from('recurring_tasks')
+      .insert({
+        department_id: department_id || null,
+        project_id: project_id || null,
+        task_type_id: task_type_id || null,
+        assigned_to,
+        assigned_by: req.user.id,
+        description,
+        priority: priority || 'Medium',
+        frequency,
+        frequency_days: frequency === 'Weekly'
+          ? (Array.isArray(frequency_days) ? frequency_days.join(',') : frequency_days)
+          : null,
+        start_date,
+        end_date: end_date || null,
+        is_active: true
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    // Insert checkpoints
+    if (checkpoints.length > 0) {
+      const cpRows = checkpoints.map((label, i) => ({
+        recurring_task_id: rt.id,
+        label: label.trim(),
+        sort_order: i
+      })).filter(r => r.label);
+
+      if (cpRows.length) {
+        const { error: cpErr } = await supabase
+          .from('recurring_task_checkpoints')
+          .insert(cpRows);
+        if (cpErr) throw cpErr;
+      }
+    }
+
+    // Return full task
+    const { data: full, error: fullErr } = await supabase
+      .from('recurring_tasks')
+      .select(RT_SELECT)
+      .eq('id', rt.id)
+      .single();
+    if (fullErr) throw fullErr;
+
+    res.status(201).json(full);
+  } catch (err) {
+    console.error('Create recurring task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not create recurring task' });
+  }
+});
+
+// ─── Admin: list all recurring tasks ───────────────────────────────────────
+router.get('/all', requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('recurring_tasks')
+      .select(RT_SELECT)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('List recurring tasks error:', err.message);
+    res.status(500).json({ error: 'Could not load recurring tasks' });
+  }
+});
+
+// ─── Employee: my recurring tasks (with today's instance + checkpoint state) ─
+router.get('/my', async (req, res) => {
+  try {
+    const today = new Date();
+
+    const { data: tasks, error } = await supabase
+      .from('recurring_tasks')
+      .select(RT_SELECT)
+      .eq('assigned_to', req.user.id)
+      .eq('is_active', true);
+    if (error) throw error;
+
+    const result = [];
+    for (const task of tasks) {
+      const fires = shouldFireToday(task, today);
+      let todayInstance = null;
+
+      if (fires) {
+        todayInstance = await getOrCreateTodayInstance(task.id, today);
+      }
+
+      result.push({ ...task, fires_today: fires, today_instance: todayInstance });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('My recurring tasks error:', err.message);
+    res.status(500).json({ error: 'Could not load recurring tasks' });
+  }
+});
+
+// ─── Admin/Employee: update recurring task (admin only: details; anyone: toggle checkpoint) ──
+
+// Admin: edit recurring task
+router.patch('/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = [
+      'department_id', 'project_id', 'task_type_id', 'assigned_to',
+      'description', 'priority', 'frequency', 'frequency_days',
+      'start_date', 'end_date', 'is_active'
+    ];
+    const updates = {};
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    }
+    if (updates.frequency_days && Array.isArray(updates.frequency_days)) {
+      updates.frequency_days = updates.frequency_days.join(',');
+    }
+
+    const { data, error } = await supabase
+      .from('recurring_tasks')
+      .update(updates)
+      .eq('id', id)
+      .select(RT_SELECT)
+      .single();
+    if (error) throw error;
+
+    // If checkpoints are provided, replace them
+    if (req.body.checkpoints !== undefined) {
+      await supabase.from('recurring_task_checkpoints').delete().eq('recurring_task_id', id);
+      if (req.body.checkpoints.length > 0) {
+        const cpRows = req.body.checkpoints.map((label, i) => ({
+          recurring_task_id: id,
+          label: typeof label === 'string' ? label.trim() : label.label?.trim(),
+          sort_order: i
+        })).filter(r => r.label);
+        if (cpRows.length) {
+          await supabase.from('recurring_task_checkpoints').insert(cpRows);
+        }
+      }
+    }
+
+    // Return updated full
+    const { data: full } = await supabase
+      .from('recurring_tasks').select(RT_SELECT).eq('id', id).single();
+    res.json(full);
+  } catch (err) {
+    console.error('Update recurring task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not update recurring task' });
+  }
+});
+
+// Admin: delete recurring task
+router.delete('/:id', requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('recurring_tasks').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete recurring task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not delete recurring task' });
+  }
+});
+
+// ─── Employee: toggle a checkpoint on today's instance ─────────────────────
+// POST /recurring-tasks/instances/:instanceId/checkpoints/:checkpointId/toggle
+router.post('/instances/:instanceId/checkpoints/:checkpointId/toggle', async (req, res) => {
+  try {
+    const { instanceId, checkpointId } = req.params;
+
+    // Verify the instance belongs to this user's task
+    const { data: inst, error: instErr } = await supabase
+      .from('recurring_task_instances')
+      .select('id, status, recurring_task_id, recurring_task_checkpoint_completions ( checkpoint_id )')
+      .eq('id', instanceId)
+      .single();
+    if (instErr) throw instErr;
+
+    // Check ownership
+    const { data: rt, error: rtErr } = await supabase
+      .from('recurring_tasks')
+      .select('assigned_to')
+      .eq('id', inst.recurring_task_id)
+      .single();
+    if (rtErr) throw rtErr;
+    if (rt.assigned_to !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not your task' });
+    }
+
+    const completedIds = (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id);
+    const alreadyDone = completedIds.includes(checkpointId);
+
+    if (alreadyDone) {
+      // Uncheck
+      await supabase.from('recurring_task_checkpoint_completions')
+        .delete()
+        .eq('instance_id', instanceId)
+        .eq('checkpoint_id', checkpointId);
+    } else {
+      // Check
+      await supabase.from('recurring_task_checkpoint_completions')
+        .insert({ instance_id: instanceId, checkpoint_id: checkpointId });
+    }
+
+    // Now check if ALL checkpoints are done — if so, mark instance complete
+    const { data: allCheckpoints } = await supabase
+      .from('recurring_task_checkpoints')
+      .select('id')
+      .eq('recurring_task_id', inst.recurring_task_id);
+
+    const { data: doneList } = await supabase
+      .from('recurring_task_checkpoint_completions')
+      .select('checkpoint_id')
+      .eq('instance_id', instanceId);
+
+    const allDone = allCheckpoints.length > 0 &&
+      doneList.length === allCheckpoints.length;
+
+    const newStatus = allDone ? 'Completed' : 'Pending';
+    const { data: updated, error: updateErr } = await supabase
+      .from('recurring_task_instances')
+      .update({
+        status: newStatus,
+        completed_at: allDone ? new Date().toISOString() : null
+      })
+      .eq('id', instanceId)
+      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+      .single();
+    if (updateErr) throw updateErr;
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Toggle checkpoint error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not toggle checkpoint' });
+  }
+});
+
+module.exports = router;
