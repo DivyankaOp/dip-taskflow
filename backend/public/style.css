@@ -80,15 +80,20 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   box-shadow: var(--sh-lg);
 }
 .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+.brand-logo {
+  width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
+  object-fit: contain;
+  box-shadow: 0 6px 18px -4px rgba(79,70,229,.35);
+}
 .brand-mark {
   display: flex; align-items: center; justify-content: center;
-  width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
+  width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
   background: linear-gradient(135deg, var(--primary), var(--primary-dk));
   color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
   box-shadow: 0 6px 18px -4px rgba(79,70,229,.5);
 }
-.brand h1 { font-size: 1.35rem; color: var(--ink); }
-.brand-tag { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+.brand h1 { font-size: 1.35rem; color: var(--ink); font-weight: 800; }
+.brand-tag { color: var(--primary-dk); font-size: 0.76rem; margin-top: 3px; font-weight: 600; font-style: italic; }
 
 #loginForm label {
   display: block; font-size: 0.76rem; font-weight: 700;
@@ -136,13 +141,6 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 }
 .ghost-btn-text:hover { border-color: var(--primary); color: var(--primary); }
 
-.logout-btn {
-  background: none; border: 1.5px solid var(--rose-bd);
-  border-radius: var(--r-sm); padding: 6px 12px;
-  color: var(--rose); font-size: 0.8rem; font-weight: 600; cursor: pointer;
-  transition: background .15s;
-}
-.logout-btn:hover { background: var(--rose-lt); }
 
 .clear-btn {
   background: none; border: 1.5px solid var(--border);
@@ -158,37 +156,53 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .topbar {
   position: sticky; top: 0; z-index: 20; height: var(--topbar-h);
   display: flex; align-items: center; gap: 14px; padding: 0 20px;
-  background: rgba(255,255,255,.94);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--sh-xs);
+  background: linear-gradient(135deg, #2D1B8E 0%, #4F46E5 60%, #6366F1 100%);
+  border-bottom: none;
+  box-shadow: 0 2px 16px rgba(79,70,229,.4);
 }
 .icon-btn {
   background: none; border: none; font-size: 1.2rem; cursor: pointer;
-  padding: 7px; border-radius: 8px; color: var(--ink-soft);
+  padding: 7px; border-radius: 8px; color: rgba(255,255,255,.85);
   transition: background .15s;
 }
-.icon-btn:hover { background: var(--bg); }
+.icon-btn:hover { background: rgba(255,255,255,.15); }
 
 .topbar-brand { display: flex; align-items: center; gap: 10px; }
+.topbar-logo {
+  width: 42px; height: 42px; border-radius: 8px; object-fit: contain;
+  background: rgba(255,255,255,.15); padding: 3px; flex-shrink: 0;
+}
 .topbar-mark {
-  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
-  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 0.82rem;
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(255,255,255,.2);
+  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 0.9rem;
   display: flex; align-items: center; justify-content: center;
 }
 .topbar-name {
-  font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.15);
 }
 
 .topbar-user { margin-left: auto; display: flex; align-items: center; gap: 14px; }
-.topbar-user-info { display: flex; align-items: center; gap: 8px; }
-.topbar-user-info strong { font-family: var(--font-display); font-size: 0.88rem; }
-.role-tag {
-  font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
-  padding: 3px 9px; border-radius: 999px;
-  background: var(--primary-lt); color: var(--primary-dk);
+.topbar-user-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.topbar-user-namerow { display: flex; align-items: center; gap: 8px; }
+.topbar-user-info strong { font-family: var(--font-display); font-size: 0.92rem; color: #fff; }
+.topbar-tagline {
+  font-size: 0.67rem; font-weight: 500; font-style: italic;
+  color: rgba(255,255,255,.75); letter-spacing: .01em; white-space: nowrap;
 }
+.role-tag {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.35);
+}
+.logout-btn {
+  background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.3);
+  border-radius: var(--r-sm); padding: 6px 12px;
+  color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+}
+.logout-btn:hover { background: rgba(255,255,255,.25); }
 
 /* ================================================================
    SIDEBAR
@@ -348,6 +362,16 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .col-priority { width: 8%; }
 .col-status   { width: 11%; }
 .col-actions  { width: 14%; }
+
+/* Verification requests table columns */
+.col-reqid     { width: 8%; }
+.col-tasksr    { width: 6%; }
+.col-vproject  { width: 18%; }
+.col-vtasktype { width: 14%; }
+.col-vsubmitted{ width: 16%; }
+.col-vattach   { width: 10%; text-align: center; }
+.col-vdate     { width: 14%; }
+.col-vactions  { width: 14%; }
 
 .sr-number {
   display: inline-flex; align-items: center; justify-content: center;
