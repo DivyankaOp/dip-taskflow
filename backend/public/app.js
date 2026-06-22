@@ -311,8 +311,8 @@ function buildNav() {
   const canResolveTickets = isAdmin || !!state.user.can_resolve_tickets;
 
   const taskItems = isAdmin
-    ? [{ key:'add', label:'➕ Add new task' }, { key:'all', label:'📋 All delegated tasks' }, { key:'my', label:'✅ My tasks' }]
-    : [{ key:'my', label:'✅ My tasks' }];
+    ? [{ key:'add', label:'➕ Add new task' }, { key:'all', label:'📋 All delegated tasks' }, { key:'my', label:'✅ My tasks' }, { key:'recurring', label:'🔁 Recurring tasks' }]
+    : [{ key:'my', label:'✅ My tasks' }, { key:'recurring', label:'🔁 My recurring tasks' }];
 
   els.navList.innerHTML = '';
   const taskLabel = document.createElement('div');
@@ -376,6 +376,7 @@ function switchView(viewKey) {
   if (viewKey === 'verifications') loadVerifications();
   if (viewKey === 'tickets')       loadTickets();
   if (viewKey === 'corrections')   loadCorrections();
+  if (viewKey === 'recurring')     loadRecurringView();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -1587,3 +1588,443 @@ els.siteForm.addEventListener('submit', async (e) => {
 
 // ─── boot ─────────────────────────────────────────────────────────────────────
 if (state.token && state.user) { enterApp(); }
+
+// ─── RECURRING TASKS ──────────────────────────────────────────────────────────
+
+// Elem references (recurring modal)
+const recEls = {
+  modal:         () => document.getElementById('recurringModal'),
+  modalTitle:    () => document.getElementById('recurringModalTitle'),
+  editId:        () => document.getElementById('recurring-edit-id'),
+  department:    () => document.getElementById('rec-department'),
+  employee:      () => document.getElementById('rec-employee'),
+  taskType:      () => document.getElementById('rec-tasktype'),
+  project:       () => document.getElementById('rec-project'),
+  description:   () => document.getElementById('rec-description'),
+  priority:      () => document.getElementById('rec-priority'),
+  weeklyField:   () => document.getElementById('weeklyDaysField'),
+  startDate:     () => document.getElementById('rec-start'),
+  endDate:       () => document.getElementById('rec-end'),
+  checkpointsList: () => document.getElementById('checkpointsList'),
+  formMsg:       () => document.getElementById('recurringFormMsg'),
+  saveBtn:       () => document.getElementById('saveRecurringBtn'),
+  openBtn:       () => document.getElementById('openAddRecurring'),
+  adminWrap:     () => document.getElementById('adminRecurringWrap'),
+  empWrap:       () => document.getElementById('employeeRecurringWrap'),
+  empList:       () => document.getElementById('employeeRecurringList'),
+  adminTable:    () => document.getElementById('recurringTasksTableBody'),
+  adminCards:    () => document.getElementById('adminRecurringCards'),
+};
+
+let recurringSelectedFreq = '';
+
+function initRecurringModal() {
+  // Frequency buttons
+  document.querySelectorAll('.freq-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      recurringSelectedFreq = btn.dataset.freq;
+      recEls.weeklyField().hidden = recurringSelectedFreq !== 'Weekly';
+    });
+  });
+
+  // Add checkpoint
+  document.getElementById('addCheckpointBtn').addEventListener('click', () => {
+    addCheckpointRow('');
+  });
+
+  // Save button
+  recEls.saveBtn().addEventListener('click', saveRecurringTask);
+
+  // Close/cancel
+  document.getElementById('closeRecurringModal').addEventListener('click', closeRecurringModal);
+  document.getElementById('cancelRecurringModal').addEventListener('click', closeRecurringModal);
+
+  // Open Add button (admin only)
+  recEls.openBtn().addEventListener('click', () => openRecurringModal(null));
+}
+
+function addCheckpointRow(value) {
+  const list = recEls.checkpointsList();
+  const row = document.createElement('div');
+  row.className = 'checkpoint-row';
+  row.innerHTML = `
+    <input type="text" class="checkpoint-input" placeholder="Checkpoint label…" value="${escapeHtml(value)}" />
+    <button type="button" class="ghost-btn-text cp-remove" style="color:#e53e3e">✕</button>
+  `;
+  row.querySelector('.cp-remove').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
+function getCheckpointValues() {
+  return [...document.querySelectorAll('.checkpoint-input')]
+    .map(i => i.value.trim())
+    .filter(Boolean);
+}
+
+function openRecurringModal(task) {
+  recEls.formMsg().hidden = true;
+  recEls.checkpointsList().innerHTML = '';
+  document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+  recEls.weeklyField().hidden = true;
+  // uncheck all days
+  document.querySelectorAll('#weeklyDaysField input[type=checkbox]').forEach(c => c.checked = false);
+
+  if (task) {
+    // Edit mode
+    recEls.modalTitle().textContent = '✏️ Edit Recurring Task';
+    recEls.saveBtn().textContent = 'Save Changes';
+    recEls.editId().value = task.id;
+    recEls.description().value = task.description || '';
+    recEls.priority().value = task.priority || 'Medium';
+    recEls.startDate().value = task.start_date || '';
+    recEls.endDate().value = task.end_date || '';
+    if (task.department?.id) recEls.department().value = task.department.id;
+    if (task.project?.id) recEls.project().value = task.project.id;
+    if (task.task_type?.id) recEls.taskType().value = task.task_type.id;
+    if (task.assigned_to_user?.id) recEls.employee().value = task.assigned_to_user.id;
+    // Frequency
+    recurringSelectedFreq = task.frequency || '';
+    const freqBtn = document.querySelector(`.freq-btn[data-freq="${recurringSelectedFreq}"]`);
+    if (freqBtn) freqBtn.classList.add('selected');
+    if (recurringSelectedFreq === 'Weekly') {
+      recEls.weeklyField().hidden = false;
+      const days = (task.frequency_days || '').split(',').map(Number);
+      document.querySelectorAll('#weeklyDaysField input[type=checkbox]').forEach(c => {
+        c.checked = days.includes(Number(c.value));
+      });
+    }
+    // Checkpoints
+    (task.checkpoints || [])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .forEach(cp => addCheckpointRow(cp.label));
+  } else {
+    // Create mode
+    recEls.modalTitle().textContent = '🔁 Create Recurring Task';
+    recEls.saveBtn().textContent = 'Create Recurring Task';
+    recEls.editId().value = '';
+    recEls.description().value = '';
+    recEls.department().value = '';
+    recEls.employee().value = '';
+    recEls.taskType().value = '';
+    recEls.project().value = '';
+    recEls.priority().value = 'Medium';
+    recEls.startDate().value = '';
+    recEls.endDate().value = '';
+    recurringSelectedFreq = '';
+  }
+
+  recEls.modal().hidden = false;
+}
+
+function closeRecurringModal() {
+  recEls.modal().hidden = true;
+}
+
+async function saveRecurringTask() {
+  recEls.formMsg().hidden = true;
+  const editId = recEls.editId().value;
+
+  if (!recEls.employee().value) {
+    recEls.formMsg().textContent = 'Please select an employee'; recEls.formMsg().hidden = false; return;
+  }
+  if (!recEls.description().value.trim()) {
+    recEls.formMsg().textContent = 'Please enter a task description'; recEls.formMsg().hidden = false; return;
+  }
+  if (!recurringSelectedFreq) {
+    recEls.formMsg().textContent = 'Please select a frequency'; recEls.formMsg().hidden = false; return;
+  }
+  if (!recEls.startDate().value) {
+    recEls.formMsg().textContent = 'Please select a start date'; recEls.formMsg().hidden = false; return;
+  }
+
+  const freqDays = [];
+  if (recurringSelectedFreq === 'Weekly') {
+    document.querySelectorAll('#weeklyDaysField input[type=checkbox]:checked').forEach(c => {
+      freqDays.push(Number(c.value));
+    });
+    if (!freqDays.length) {
+      recEls.formMsg().textContent = 'Please select at least one day'; recEls.formMsg().hidden = false; return;
+    }
+  }
+
+  const body = {
+    assigned_to:    recEls.employee().value,
+    department_id:  recEls.department().value || null,
+    project_id:     recEls.project().value || null,
+    task_type_id:   recEls.taskType().value || null,
+    description:    recEls.description().value.trim(),
+    priority:       recEls.priority().value,
+    frequency:      recurringSelectedFreq,
+    frequency_days: freqDays,
+    start_date:     recEls.startDate().value,
+    end_date:       recEls.endDate().value || null,
+    checkpoints:    getCheckpointValues()
+  };
+
+  recEls.saveBtn().disabled = true;
+  try {
+    if (editId) {
+      await api(`/recurring-tasks/${editId}`, { method: 'PATCH', body });
+      showToast('Recurring task updated ✅', 'success');
+    } else {
+      await api('/recurring-tasks', { method: 'POST', body });
+      showToast('Recurring task created ✅', 'success');
+    }
+    closeRecurringModal();
+    loadRecurringView();
+  } catch (err) {
+    recEls.formMsg().textContent = err.message;
+    recEls.formMsg().hidden = false;
+  } finally {
+    recEls.saveBtn().disabled = false;
+  }
+}
+
+async function loadRecurringView() {
+  const isAdmin = state.user.role === 'admin';
+  recEls.openBtn().hidden = !isAdmin;
+  recEls.adminWrap().hidden = !isAdmin;
+  recEls.empWrap().hidden = isAdmin;
+
+  if (isAdmin) {
+    await loadAdminRecurringTasks();
+  } else {
+    await loadEmployeeRecurringTasks();
+  }
+}
+
+// ─── Admin view ───────────────────────────────────────────────────────────────
+
+async function loadAdminRecurringTasks() {
+  const tbody = recEls.adminTable();
+  tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Loading…</td></tr>`;
+  recEls.adminCards().innerHTML = `<div class="empty-state">Loading…</div>`;
+  try {
+    const tasks = await api('/recurring-tasks/all');
+    renderAdminRecurringTable(tasks);
+    renderAdminRecurringCards(tasks);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function freqLabel(task) {
+  if (task.frequency === 'Weekly' && task.frequency_days) {
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const days = task.frequency_days.split(',').map(Number).map(d => dayNames[d]).join(', ');
+    return `Weekly (${days})`;
+  }
+  return task.frequency;
+}
+
+function renderAdminRecurringTable(tasks) {
+  const tbody = recEls.adminTable();
+  if (!tasks.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No recurring tasks yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach(task => {
+    const tr = document.createElement('tr');
+    const cpCount = (task.checkpoints || []).length;
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong></td>
+      <td style="max-width:200px">${escapeHtml(task.description?.slice(0,80) ?? '—')}${task.description?.length > 80 ? '…' : ''}</td>
+      <td>${escapeHtml(freqLabel(task))}</td>
+      <td style="font-size:12px">${escapeHtml(task.start_date ?? '—')} → ${escapeHtml(task.end_date ?? 'ongoing')}</td>
+      <td>${cpCount ? `${cpCount} checkpoint${cpCount>1?'s':''}` : '<span style="color:#aaa">None</span>'}</td>
+      <td><span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td class="row-actions"></td>
+    `;
+    const actCell = tr.lastElementChild;
+    const editBtn = document.createElement('button');
+    editBtn.className = 'action-btn action-accept'; editBtn.textContent = '✏️ Edit';
+    editBtn.addEventListener('click', () => openRecurringModal(task));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'action-btn action-reject'; delBtn.textContent = '🗑️ Delete';
+    delBtn.addEventListener('click', () => deleteRecurringTask(task));
+    actCell.appendChild(editBtn); actCell.appendChild(delBtn);
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAdminRecurringCards(tasks) {
+  const wrap = recEls.adminCards();
+  if (!tasks.length) { wrap.innerHTML = `<div class="empty-state">No recurring tasks yet</div>`; return; }
+  wrap.innerHTML = '';
+  tasks.forEach(task => {
+    const cpCount = (task.checkpoints || []).length;
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.innerHTML = `
+      <div class="task-card-header">
+        <span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span>
+        <span style="font-size:12px;color:#888">${escapeHtml(freqLabel(task))}</span>
+      </div>
+      <div class="task-card-body">
+        <div class="task-detail-line"><span class="task-detail-label">Employee:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Task:</span> ${escapeHtml(task.description?.slice(0,100) ?? '—')}${task.description?.length>100?'…':''}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Checkpoints:</span> ${cpCount ? `${cpCount}` : 'None'}</div>
+      </div>
+      <div class="task-card-actions">
+        <button class="action-btn action-accept edit-rec-btn">✏️ Edit</button>
+        <button class="action-btn action-reject del-rec-btn">🗑️ Delete</button>
+      </div>
+    `;
+    card.querySelector('.edit-rec-btn').addEventListener('click', () => openRecurringModal(task));
+    card.querySelector('.del-rec-btn').addEventListener('click', () => deleteRecurringTask(task));
+    wrap.appendChild(card);
+  });
+}
+
+async function deleteRecurringTask(task) {
+  if (!confirm(`Delete recurring task "${task.description?.slice(0,60)}"? This cannot be undone.`)) return;
+  try {
+    await api(`/recurring-tasks/${task.id}`, { method: 'DELETE' });
+    showToast('Recurring task deleted', 'success');
+    loadRecurringView();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ─── Employee view ────────────────────────────────────────────────────────────
+
+async function loadEmployeeRecurringTasks() {
+  const wrap = recEls.empList();
+  wrap.innerHTML = `<div class="empty-state">Loading your recurring tasks…</div>`;
+  try {
+    const tasks = await api('/recurring-tasks/my');
+    renderEmployeeRecurringList(tasks);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderEmployeeRecurringList(tasks) {
+  const wrap = recEls.empList();
+  if (!tasks.length) {
+    wrap.innerHTML = `<div class="empty-state">No recurring tasks assigned to you</div>`;
+    return;
+  }
+  wrap.innerHTML = '';
+
+  // Group: fires today on top
+  const today = tasks.filter(t => t.fires_today);
+  const notToday = tasks.filter(t => !t.fires_today);
+
+  if (today.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
+    wrap.appendChild(hdr);
+    today.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+  if (notToday.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
+    hdr.textContent = 'Other recurring tasks (not due today)';
+    wrap.appendChild(hdr);
+    notToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+}
+
+function buildEmployeeRecurringCard(task) {
+  const card = document.createElement('div');
+  card.className = 'task-card';
+  const inst = task.today_instance;
+  const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
+  const completedIds = inst
+    ? (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id)
+    : [];
+  const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+  const status = !task.fires_today ? 'Not today'
+    : inst?.status === 'Completed' ? 'Completed'
+    : checkpoints.length === 0 ? 'No checkpoints'
+    : `${completedIds.length}/${checkpoints.length} done`;
+
+  const pillClass = allDone ? 'pill-Completed'
+    : !task.fires_today ? 'pill-Rejected'
+    : 'pill-In-Progress';
+
+  let checkpointsHtml = '';
+  if (task.fires_today && checkpoints.length > 0) {
+    checkpointsHtml = `<div class="checkpoint-list" style="margin-top:12px">`;
+    checkpoints.forEach(cp => {
+      const done = completedIds.includes(cp.id);
+      checkpointsHtml += `
+        <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-instance="${inst?.id}" data-cp="${cp.id}">
+          <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${!inst ? 'disabled' : ''} />
+          <span>${escapeHtml(cp.label)}</span>
+        </label>`;
+    });
+    checkpointsHtml += `</div>`;
+  } else if (task.fires_today && checkpoints.length === 0) {
+    checkpointsHtml = `<p class="form-note" style="margin-top:8px">No checkpoints — mark complete via the button below.</p>`;
+  }
+
+  card.innerHTML = `
+    <div class="task-card-header">
+      <span class="pill ${pillClass}">${escapeHtml(status)}</span>
+      <span style="font-size:12px;color:#888">${escapeHtml(freqLabel(task))}</span>
+    </div>
+    <div class="task-card-body">
+      <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+      ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
+      ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+      <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
+      ${checkpointsHtml}
+    </div>
+    ${task.fires_today && checkpoints.length === 0 && inst?.status !== 'Completed' ? `
+    <div class="task-card-actions">
+      <button class="action-btn action-accept mark-done-btn" data-task-id="${task.id}" data-instance-id="${inst?.id ?? ''}">✅ Mark as done</button>
+    </div>` : ''}
+  `;
+
+  // Attach checkbox handlers
+  card.querySelectorAll('.cp-checkbox').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
+      const label = e.target.closest('label');
+      const instanceId = label.dataset.instance;
+      const checkpointId = label.dataset.cp;
+      if (!instanceId) return;
+      cb.disabled = true;
+      try {
+        const updated = await api(
+          `/recurring-tasks/instances/${instanceId}/checkpoints/${checkpointId}/toggle`,
+          { method: 'POST' }
+        );
+        // Refresh the whole list to reflect new state
+        const tasks = await api('/recurring-tasks/my');
+        renderEmployeeRecurringList(tasks);
+        if (updated.status === 'Completed') showToast('All checkpoints done — task completed! ✅', 'success');
+      } catch (err) {
+        cb.disabled = false;
+        cb.checked = !cb.checked;
+        showToast(err.message, 'error');
+      }
+    });
+  });
+
+  return card;
+}
+
+// ─── Boot recurring modal once DOM is ready ───────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initRecurringModal();
+  // Fill dropdowns in recurring modal when master data is available
+  const origLoadMaster = window.loadMasterData;
+});
+
+// Also fill recurring dropdowns after master data loads (hook into existing loadMasterData)
+const _origLoadMasterData = typeof loadMasterData !== 'undefined' ? loadMasterData : null;
+async function fillRecurringDropdowns() {
+  if (!state.master) return;
+  fillSelect(recEls.department(), state.master.departments, { placeholder: 'Select Department' });
+  fillSelect(recEls.employee(), state.master.employees, { placeholder: 'Select Employee', labelKey: 'full_name' });
+  fillSelect(recEls.taskType(), state.master.taskTypes, { placeholder: 'Select Task Type' });
+  fillSelect(recEls.project(), state.master.projects, { placeholder: 'Select Project' });
+}
+
+// Patch loadMasterData to also fill recurring dropdowns
+const __origLoadMasterData = loadMasterData;
+window.loadMasterData = async function() {
+  await __origLoadMasterData();
+  fillRecurringDropdowns();
+};
