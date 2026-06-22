@@ -991,8 +991,12 @@ async function loadVerifications() {
 
 // ─── Corrections view (employee) ──────────────────────────────────────────────
 async function loadCorrections() {
-  els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
-  els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
+  if (els.correctionsTableBody) {
+    els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
+  }
+  if (els.correctionsList) {
+    els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
+  }
   try {
     const allTasks = await api('/tasks/my');
     const corrections = allTasks.filter((t) => t.verification_status === 'Verification Rejected');
