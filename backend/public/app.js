@@ -835,11 +835,76 @@ async function verifyTask(taskId, approved, note) {
 }
 
 async function loadVerifications() {
+  els.verificationsTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
   els.verificationsList.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
     const tasks = await api('/tasks/verifications');
+    renderVerificationsTable(els.verificationsTableBody, tasks);
     renderTaskList(els.verificationsList, tasks, { showAssignee: true, allowActions: false, verificationMode: true });
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// renders "Verification requests" as a table (desktop). Only shows tasks
+// that were sent to the currently logged-in user for sign-off (the
+// /tasks/verifications endpoint already filters to that).
+function renderVerificationsTable(tbody, tasks) {
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">📭</span>No verification requests</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const tr = document.createElement('tr');
+
+    // Request ID
+    const tdReqId = document.createElement('td');
+    tdReqId.innerHTML = `<span class="sr-number">#${task.id}</span>`;
+
+    // Task Sr No
+    const tdSr = document.createElement('td');
+    tdSr.textContent = index + 1;
+
+    // Project
+    const tdProject = document.createElement('td');
+    tdProject.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.project?.name ?? '—')}</strong>`;
+
+    // Task Type
+    const tdTaskType = document.createElement('td');
+    tdTaskType.textContent = task.task_type?.name ?? '—';
+
+    // Submitted By
+    const tdSubmittedBy = document.createElement('td');
+    tdSubmittedBy.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
+
+    // Attachments (voice note + attachment, if present)
+    const tdAttach = document.createElement('td');
+    tdAttach.style.textAlign = 'center';
+    const links = [];
+    if (task.attachment_url) {
+      links.push(`<a href="${task.attachment_url}" target="_blank" rel="noopener" class="media-link" title="View attachment">📎</a>`);
+    }
+    if (task.voice_note_url) {
+      links.push(`<a href="${task.voice_note_url}" target="_blank" rel="noopener" class="media-link" title="Play voice note">🎤</a>`);
+    }
+    tdAttach.innerHTML = links.length ? links.join(' ') : `<span class="media-none">—</span>`;
+
+    // Submission date (when it was sent for verification — fall back to created date)
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.textContent = fmtDate(task.verification_requested_at ?? task.updated_at ?? task.created_at);
+
+    // Actions
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    tdActions.appendChild(makeActionBtn('action-complete', 'Approve', () => verifyTask(task.id, true)));
+    tdActions.appendChild(makeActionBtn('action-reject', 'Reject', () => {
+      const note = prompt('Reason for rejecting this verification (optional):') || '';
+      verifyTask(task.id, false, note);
+    }));
+
+    tr.append(tdReqId, tdSr, tdProject, tdTaskType, tdSubmittedBy, tdAttach, tdDate, tdActions);
+    tbody.appendChild(tr);
+  });
 }
 
 // ─── Reschedule ───────────────────────────────────────────────────────────────
