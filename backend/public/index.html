@@ -802,15 +802,13 @@
           <label for="rec-description">Task Description <span class="req">*</span></label>
           <textarea id="rec-description" rows="3" placeholder="Describe the recurring task" required></textarea>
         </div>
-        <div class="field-grid">
-          <div class="field">
-            <label for="rec-priority">Priority</label>
-            <select id="rec-priority">
-              <option value="Low">Low</option>
-              <option value="Medium" selected>Medium</option>
-              <option value="High">High</option>
-            </select>
-          </div>
+        <div class="field" hidden>
+          <label for="rec-priority">Priority</label>
+          <select id="rec-priority">
+            <option value="Low">Low</option>
+            <option value="Medium" selected>Medium</option>
+            <option value="High">High</option>
+          </select>
         </div>
 
         <!-- Frequency selector -->
