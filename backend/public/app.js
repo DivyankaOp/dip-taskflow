@@ -2044,15 +2044,37 @@ function renderEmployeeRecurringList(tasks) {
   }
   wrap.innerHTML = '';
 
-  // Group: fires today on top
-  const today = tasks.filter(t => t.fires_today);
+  // Today's tasks split into "still to do" vs "already completed today" —
+  // a completed task drops out of the active list so the employee isn't
+  // staring at a checklist they already finished. It'll reappear here
+  // automatically on its next due date once the backend creates a fresh
+  // instance for that date.
+  const dueToday = tasks.filter(t => t.fires_today);
+  const activeToday = dueToday.filter(t => t.today_instance?.status !== 'Completed');
+  const completedToday = dueToday.filter(t => t.today_instance?.status === 'Completed');
   const notToday = tasks.filter(t => !t.fires_today);
 
-  if (today.length) {
+  if (activeToday.length) {
     const hdr = document.createElement('div');
     hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
     wrap.appendChild(hdr);
-    today.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+    activeToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+  if (completedToday.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
+    hdr.textContent = '✅ Completed today';
+    wrap.appendChild(hdr);
+    completedToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+  if (!activeToday.length && !completedToday.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
+    wrap.appendChild(hdr);
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'Nothing due today 🎉';
+    wrap.appendChild(empty);
   }
   if (notToday.length) {
     const hdr = document.createElement('div');
@@ -2086,9 +2108,10 @@ function buildEmployeeRecurringCard(task) {
     checkpointsHtml = `<div class="checkpoint-list" style="margin-top:12px">`;
     checkpoints.forEach(cp => {
       const done = completedIds.includes(cp.id);
+      const isLocked = !inst || inst.status === 'Completed';
       checkpointsHtml += `
         <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-instance="${inst?.id}" data-cp="${cp.id}">
-          <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${!inst ? 'disabled' : ''} />
+          <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${isLocked ? 'disabled' : ''} />
           <span>${escapeHtml(cp.label)}</span>
         </label>`;
     });
