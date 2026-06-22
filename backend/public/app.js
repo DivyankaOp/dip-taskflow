@@ -95,6 +95,7 @@ const els = {
 
   // Corrections view (employee)
   correctionsList: document.getElementById('correctionsList'),
+  correctionsTableBody: document.getElementById('correctionsTableBody'),
 
   // Correction modal (verifier → employee)
   correctionModal: document.getElementById('correctionModal'),
@@ -990,12 +991,58 @@ async function loadVerifications() {
 
 // ─── Corrections view (employee) ──────────────────────────────────────────────
 async function loadCorrections() {
+  els.correctionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading corrections…</td></tr>`;
   els.correctionsList.innerHTML = '<div class="empty-state">Loading corrections…</div>';
   try {
     const allTasks = await api('/tasks/my');
     const corrections = allTasks.filter((t) => t.verification_status === 'Verification Rejected');
+    renderCorrectionsTable(corrections);
     renderCorrectionsList(corrections);
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Desktop table view — same data as the card view below, just laid out as rows.
+function renderCorrectionsTable(tasks) {
+  const tbody = els.correctionsTableBody;
+  if (!tasks.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const tr = document.createElement('tr');
+
+    const tdSr = document.createElement('td');
+    tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
+
+    const tdDetails = document.createElement('td');
+    tdDetails.className = 'task-name-cell';
+    tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: false });
+
+    const tdNote = document.createElement('td');
+    tdNote.innerHTML = `
+      <div class="correction-note-box" style="margin:0">
+        <div class="correction-note-label">↩ From <strong>${escapeHtml(task.verifier?.full_name ?? 'Verifier')}</strong>:</div>
+        <div class="correction-note-text">${escapeHtml(task.verification_note ?? '(no note)')}</div>
+        ${task.correction_voice_url ? `<a href="${task.correction_voice_url}" target="_blank" rel="noopener" class="attachment-link" style="margin-top:6px;display:inline-block">🎤 Voice note</a>` : ''}
+      </div>
+    `;
+
+    const tdPriority = document.createElement('td');
+    tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
+
+    const tdStatus = document.createElement('td');
+    tdStatus.innerHTML = `<span class="pill pill-InProgress">${escapeHtml(task.status)}</span>`;
+
+    const tdActions = document.createElement('td');
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'task-actions';
+    actionsWrap.appendChild(makeActionBtn('action-start', '🔄 Resend for Verification', () => openResendVerifyModal(task)));
+    tdActions.appendChild(actionsWrap);
+
+    tr.append(tdSr, tdDetails, tdNote, tdPriority, tdStatus, tdActions);
+    tbody.appendChild(tr);
+  });
 }
 
 function renderCorrectionsList(tasks) {
@@ -1003,7 +1050,6 @@ function renderCorrectionsList(tasks) {
     els.correctionsList.innerHTML = `<div class="empty-state"><span class="emoji">✅</span>No corrections — you're all good!</div>`;
     return;
   }
-  els.correctionsList.classList.add('task-list');
   els.correctionsList.innerHTML = '';
   tasks.forEach((task) => {
     const card = document.createElement('div');
