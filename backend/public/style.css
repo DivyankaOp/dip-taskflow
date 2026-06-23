@@ -877,7 +877,22 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 /* pill colours */
 .pill-Completed { background: #d1fae5; color: #065f46; }
 
-/* ── Report range buttons ── */
+
+/* ══════════════════════════════════════════════
+   REPORTS
+══════════════════════════════════════════════ */
+
+/* Screen-only top bar */
+.rpt-screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* Range toggle buttons */
 .report-range-btn {
   padding: 6px 14px;
   border-radius: 20px;
@@ -889,16 +904,143 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   cursor: pointer;
   transition: all 0.15s;
 }
-.report-range-btn:hover {
-  border-color: var(--primary);
-  color: var(--primary);
+.report-range-btn:hover { border-color: var(--primary); color: var(--primary); }
+.report-range-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+/* Document wrapper */
+#reportDoc {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #111;
+  max-width: 1100px;
 }
-.report-range-btn.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
+
+.rpt-doc-header {
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 28px;
 }
-.report-emp-header:hover {
-  background: #f1f5f9 !important;
+
+/* Summary stat strip */
+.rpt-summary-strip {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+}
+.rpt-stat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px 22px;
+  min-width: 140px;
+  flex: 1;
+}
+
+/* Section titles */
+.rpt-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111;
+  border-bottom: 1.5px solid #e5e7eb;
+  padding-bottom: 8px;
+  margin: 28px 0 16px;
+}
+.rpt-section-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #6366f1;
+  margin-left: 8px;
+  letter-spacing: 0.2px;
+}
+
+/* Employee cards grid */
+.rpt-emp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.rpt-emp-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+/* Tables */
+.rpt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.rpt-table th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 700;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1.5px solid #e5e7eb;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.rpt-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 12px;
+}
+.rpt-table tr:last-child td { border-bottom: none; }
+.rpt-table tr:hover td { background: #fafafa; }
+.rpt-matrix th, .rpt-matrix td { text-align: left; }
+
+/* ══════════════════════════════════════════════
+   PRINT / PDF EXPORT
+══════════════════════════════════════════════ */
+@media print {
+  /* Hide everything except the report */
+  body > * { display: none !important; }
+  .app-shell { display: none !important; }
+  #reportDoc { display: block !important; }
+
+  /* Make report full page */
+  #reportDoc {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    padding: 28px 36px;
+    font-size: 11px;
+    max-width: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .rpt-screen-header { display: none !important; }
+
+  .rpt-stat-card {
+    border: 1px solid #e5e7eb !important;
+    break-inside: avoid;
+  }
+
+  .rpt-emp-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .rpt-table th, .rpt-table td {
+    font-size: 9px;
+    padding: 5px 6px;
+  }
+
+  .rpt-section-title { margin-top: 18px; }
+
+  /* Force backgrounds to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Page breaks */
+  .rpt-section-title { break-before: auto; }
+  .rpt-emp-grid { break-inside: avoid; }
+  #reportDoc > div:nth-child(5) { break-before: page; } /* Matrix on new page */
 }
