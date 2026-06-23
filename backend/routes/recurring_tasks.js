@@ -365,6 +365,75 @@ router.post('/instances/:instanceId/complete', async (req, res) => {
   }
 });
 
+// ─── Employee: submit checked checkpoints for an instance, all at once ─────
+// POST /recurring-tasks/instances/:instanceId/submit
+// Body: { checkpoint_ids: [ ...ids that should be marked done ] }
+// Replaces the full completion set for this instance with exactly the ids
+// sent, then recalculates status (Completed only if every checkpoint for
+// the task is included).
+router.post('/instances/:instanceId/submit', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    const { checkpoint_ids = [] } = req.body || {};
+
+    const { data: inst, error: instErr } = await supabase
+      .from('recurring_task_instances')
+      .select('id, status, recurring_task_id')
+      .eq('id', instanceId)
+      .single();
+    if (instErr) throw instErr;
+
+    // Ownership check
+    const { data: rt, error: rtErr } = await supabase
+      .from('recurring_tasks')
+      .select('assigned_to')
+      .eq('id', inst.recurring_task_id)
+      .single();
+    if (rtErr) throw rtErr;
+    if (rt.assigned_to !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not your task' });
+    }
+
+    // All valid checkpoint ids for this task — used to ignore anything
+    // bogus sent from the client and to know the full set for "all done".
+    const { data: allCheckpoints, error: cpListErr } = await supabase
+      .from('recurring_task_checkpoints')
+      .select('id')
+      .eq('recurring_task_id', inst.recurring_task_id);
+    if (cpListErr) throw cpListErr;
+    const validIds = new Set(allCheckpoints.map(c => c.id));
+    const submittedIds = [...new Set((checkpoint_ids || []).filter(id => validIds.has(id)))];
+
+    // Replace completion rows wholesale with whatever was submitted
+    await supabase
+      .from('recurring_task_checkpoint_completions')
+      .delete()
+      .eq('instance_id', instanceId);
+
+    if (submittedIds.length) {
+      const rows = submittedIds.map(checkpoint_id => ({ instance_id: instanceId, checkpoint_id }));
+      const { error: insErr } = await supabase.from('recurring_task_checkpoint_completions').insert(rows);
+      if (insErr) throw insErr;
+    }
+
+    const allDone = allCheckpoints.length > 0 && submittedIds.length === allCheckpoints.length;
+    const newStatus = allDone ? 'Completed' : 'Pending';
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('recurring_task_instances')
+      .update({ status: newStatus, completed_at: allDone ? new Date().toISOString() : null })
+      .eq('id', instanceId)
+      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+      .single();
+    if (updateErr) throw updateErr;
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Submit checkpoints error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not submit checkpoints' });
+  }
+});
+
 // ─── Employee: toggle a checkpoint on today's instance ─────────────────────
 // POST /recurring-tasks/instances/:instanceId/checkpoints/:checkpointId/toggle
 router.post('/instances/:instanceId/checkpoints/:checkpointId/toggle', async (req, res) => {
