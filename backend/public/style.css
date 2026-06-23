@@ -50,6 +50,16 @@
 }
 
 *  { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Global safety net: the [hidden] attribute must always win over any
+   component's own `display` rule, regardless of class. Without this,
+   any element with both a class setting `display` (e.g. flex/inline-flex/
+   grid) and the `hidden` attribute can end up visible, because an author
+   class rule beats the browser's built-in [hidden] rule at equal
+   specificity. This was the cause of the "+ Add recurring task" button
+   staying visible to employees even when JS correctly set hidden = true. */
+[hidden] { display: none !important; }
+
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -128,6 +138,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   box-shadow: 0 4px 14px -4px rgba(79,70,229,.55);
   transition: transform .12s, box-shadow .15s;
 }
+.primary-btn[hidden] { display: none !important; }
 .primary-btn:hover { box-shadow: 0 8px 22px -6px rgba(79,70,229,.7); transform: translateY(-1px); }
 .primary-btn:active { transform: scale(.98); box-shadow: none; }
 .primary-btn-inline { width: auto; margin-top: 0; padding: 9px 18px; font-size: 0.83rem; }
