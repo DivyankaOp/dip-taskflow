@@ -2291,7 +2291,8 @@ function initReportsView() {
   document.getElementById('loadReportBtn').onclick = loadReport;
 
   // Load default (today) immediately on first open
-  if (!document.getElementById('reportContent')._loaded) {
+  //if (!document.getElementById('reportContent')._loaded) {
+  if (!_reportInitDone) {
     document.getElementById('reportContent')._loaded = true;
     loadReport();
   }
