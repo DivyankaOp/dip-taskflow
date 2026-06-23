@@ -2080,6 +2080,7 @@ function renderEmployeeRecurringTable(tasks) {
       ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
       : [];
     const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+    const isLocked = !inst || inst.status === 'Completed';
     const statusText = !task.fires_today ? 'Not today'
       : inst?.status === 'Completed' ? 'Completed'
       : checkpoints.length === 0 ? 'No checkpoints'
@@ -2106,18 +2107,97 @@ function renderEmployeeRecurringTable(tasks) {
     const tdCheckpoints = document.createElement('td');
     if (checkpoints.length === 0) {
       tdCheckpoints.innerHTML = `<span style="color:#aaa">None</span>`;
-    } else {
+    } else if (!task.fires_today) {
+      // Not due today — show read-only state, nothing to tick.
       tdCheckpoints.innerHTML = checkpoints.map((cp) => {
         const done = completedIds.includes(cp.id);
         return `<div class="task-detail-line" style="${done ? 'text-decoration:line-through;color:#9CA3AF' : ''}">${done ? '✅' : '⬜'} ${escapeHtml(cp.label)}</div>`;
       }).join('');
+    } else {
+      // Due today — interactive checkboxes + a Submit button so the
+      // employee can tick several off and save them in one go.
+      tdCheckpoints.innerHTML = checkpoints.map((cp) => {
+        const done = completedIds.includes(cp.id);
+        return `
+          <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-cp="${cp.id}" style="display:flex;align-items:center;gap:6px;font-size:0.85rem">
+            <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${isLocked ? 'disabled' : ''} />
+            <span>${escapeHtml(cp.label)}</span>
+          </label>`;
+      }).join('');
+      if (!isLocked) {
+        tdCheckpoints.innerHTML += `
+          <button class="action-btn action-accept submit-checkpoints-btn" data-instance-id="${inst?.id ?? ''}" style="margin-top:6px">✅ Submit</button>`;
+      }
     }
 
     const tdStatus = document.createElement('td');
     tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
+    if (task.fires_today && checkpoints.length === 0 && inst?.status !== 'Completed') {
+      tdStatus.innerHTML += `
+        <div style="margin-top:6px">
+          <button class="action-btn action-accept mark-done-btn" data-instance-id="${inst?.id ?? ''}">✅ Mark as done</button>
+        </div>`;
+    }
 
     tr.append(tdTask, tdFreq, tdPeriod, tdCheckpoints, tdStatus);
     tbody.appendChild(tr);
+
+    // Wire up checkbox visual toggling (local only, not saved yet)
+    tr.querySelectorAll('.cp-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const label = e.target.closest('label');
+        label.classList.toggle('cp-done', cb.checked);
+      });
+    });
+
+    // Wire up Submit — sends all checked checkpoint ids together
+    const submitBtn = tr.querySelector('.submit-checkpoints-btn');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        const instanceId = submitBtn.dataset.instanceId;
+        if (!instanceId) return;
+        const checkedIds = [...tr.querySelectorAll('.cp-checkbox:checked')]
+          .map(cb => cb.closest('label').dataset.cp);
+        submitBtn.disabled = true;
+        try {
+          const updated = await api(
+            `/recurring-tasks/instances/${instanceId}/submit`,
+            { method: 'POST', body: { checkpoint_ids: checkedIds } }
+          );
+          const refreshed = await api('/recurring-tasks/my');
+          renderEmployeeRecurringList(refreshed);
+          renderEmployeeRecurringTable(refreshed);
+          if (updated.status === 'Completed') {
+            showToast('All checkpoints done — task completed! ✅', 'success');
+          } else {
+            showToast('Checkpoints saved', 'success');
+          }
+        } catch (err) {
+          submitBtn.disabled = false;
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    // Wire up "Mark as done" — tasks with no checkpoints
+    const markDoneBtn = tr.querySelector('.mark-done-btn');
+    if (markDoneBtn) {
+      markDoneBtn.addEventListener('click', async () => {
+        const instanceId = markDoneBtn.dataset.instanceId;
+        if (!instanceId) return;
+        markDoneBtn.disabled = true;
+        try {
+          const updated = await api(`/recurring-tasks/instances/${instanceId}/complete`, { method: 'POST' });
+          const refreshed = await api('/recurring-tasks/my');
+          renderEmployeeRecurringList(refreshed);
+          renderEmployeeRecurringTable(refreshed);
+          if (updated.status === 'Completed') showToast('Task marked as done ✅', 'success');
+        } catch (err) {
+          markDoneBtn.disabled = false;
+          showToast(err.message, 'error');
+        }
+      });
+    }
   });
 }
 function renderEmployeeRecurringList(tasks) {
@@ -2178,6 +2258,7 @@ function buildEmployeeRecurringCard(task) {
     ? (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id)
     : [];
   const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+  const isLocked = !inst || inst.status === 'Completed';
   const status = !task.fires_today ? 'Not today'
     : inst?.status === 'Completed' ? 'Completed'
     : checkpoints.length === 0 ? 'No checkpoints'
@@ -2192,14 +2273,19 @@ function buildEmployeeRecurringCard(task) {
     checkpointsHtml = `<div class="checkpoint-list" style="margin-top:12px">`;
     checkpoints.forEach(cp => {
       const done = completedIds.includes(cp.id);
-      const isLocked = !inst || inst.status === 'Completed';
       checkpointsHtml += `
-        <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-instance="${inst?.id}" data-cp="${cp.id}">
+        <label class="checkpoint-item ${done ? 'cp-done' : ''}" data-cp="${cp.id}">
           <input type="checkbox" class="cp-checkbox" ${done ? 'checked' : ''} ${isLocked ? 'disabled' : ''} />
           <span>${escapeHtml(cp.label)}</span>
         </label>`;
     });
     checkpointsHtml += `</div>`;
+    if (!isLocked) {
+      checkpointsHtml += `
+        <div class="task-card-actions" style="margin-top:10px">
+          <button class="action-btn action-accept submit-checkpoints-btn" data-instance-id="${inst?.id ?? ''}">✅ Submit</button>
+        </div>`;
+    }
   } else if (task.fires_today && checkpoints.length === 0) {
     checkpointsHtml = `<p class="form-note" style="margin-top:8px">No checkpoints — mark complete via the button below.</p>`;
   }
@@ -2222,7 +2308,7 @@ function buildEmployeeRecurringCard(task) {
     </div>` : ''}
   `;
 
-  // Attach "mark as done" handler (tasks with no checkpoints)
+  // "Mark as done" — tasks with no checkpoints, completes instantly
   const markDoneBtn = card.querySelector('.mark-done-btn');
   if (markDoneBtn) {
     markDoneBtn.addEventListener('click', async () => {
@@ -2242,33 +2328,45 @@ function buildEmployeeRecurringCard(task) {
     });
   }
 
-  // Attach checkpoint handlers
+  // Checkpoint checkboxes — purely local state, no network call on click.
+  // Ticking/unticking just updates the checkbox visually; nothing is saved
+  // until "Submit" is pressed below.
   card.querySelectorAll('.cp-checkbox').forEach(cb => {
-    cb.addEventListener('change', async (e) => {
+    cb.addEventListener('change', (e) => {
       const label = e.target.closest('label');
-      const instanceId = label.dataset.instance;
-      const checkpointId = label.dataset.cp;
+      label.classList.toggle('cp-done', cb.checked);
+    });
+  });
+
+  // "Submit" — sends the full set of currently-checked checkpoints in one
+  // request, then refreshes from the server.
+  const submitBtn = card.querySelector('.submit-checkpoints-btn');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+      const instanceId = submitBtn.dataset.instanceId;
       if (!instanceId) return;
-      cb.disabled = true;
+      const checkedIds = [...card.querySelectorAll('.cp-checkbox:checked')]
+        .map(cb => cb.closest('label').dataset.cp);
+      submitBtn.disabled = true;
       try {
         const updated = await api(
-          `/recurring-tasks/instances/${instanceId}/checkpoints/${checkpointId}/toggle`,
-          { method: 'POST' }
+          `/recurring-tasks/instances/${instanceId}/submit`,
+          { method: 'POST', body: { checkpoint_ids: checkedIds } }
         );
-        // Refresh the whole list to reflect new state
-        // const tasks = await api('/recurring-tasks/my');
-        // renderEmployeeRecurringList(tasks);
         const tasks = await api('/recurring-tasks/my');
-renderEmployeeRecurringList(tasks);
-renderEmployeeRecurringTable(tasks);
-        if (updated.status === 'Completed') showToast('All checkpoints done — task completed! ✅', 'success');
+        renderEmployeeRecurringList(tasks);
+        renderEmployeeRecurringTable(tasks);
+        if (updated.status === 'Completed') {
+          showToast('All checkpoints done — task completed! ✅', 'success');
+        } else {
+          showToast('Checkpoints saved', 'success');
+        }
       } catch (err) {
-        cb.disabled = false;
-        cb.checked = !cb.checked;
+        submitBtn.disabled = false;
         showToast(err.message, 'error');
       }
     });
-  });
+  }
 
   return card;
 }
