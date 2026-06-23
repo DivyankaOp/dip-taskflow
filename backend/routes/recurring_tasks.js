@@ -314,6 +314,57 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Employee: mark an instance done directly (only for tasks with no checkpoints) ──
+// POST /recurring-tasks/instances/:instanceId/complete
+router.post('/instances/:instanceId/complete', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+
+    const { data: inst, error: instErr } = await supabase
+      .from('recurring_task_instances')
+      .select('id, status, recurring_task_id')
+      .eq('id', instanceId)
+      .single();
+    if (instErr) throw instErr;
+
+    // Check ownership
+    const { data: rt, error: rtErr } = await supabase
+      .from('recurring_tasks')
+      .select('assigned_to')
+      .eq('id', inst.recurring_task_id)
+      .single();
+    if (rtErr) throw rtErr;
+    if (rt.assigned_to !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not your task' });
+    }
+
+    // Only allow direct completion when the task has no checkpoints —
+    // tasks with checkpoints must be completed by ticking all of them
+    // (see the /checkpoints/:checkpointId/toggle route above).
+    const { data: checkpoints, error: cpErr } = await supabase
+      .from('recurring_task_checkpoints')
+      .select('id')
+      .eq('recurring_task_id', inst.recurring_task_id);
+    if (cpErr) throw cpErr;
+    if (checkpoints.length > 0) {
+      return res.status(400).json({ error: 'This task has checkpoints — tick them to complete it' });
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('recurring_task_instances')
+      .update({ status: 'Completed', completed_at: new Date().toISOString() })
+      .eq('id', instanceId)
+      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+      .single();
+    if (updateErr) throw updateErr;
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Complete instance error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not mark task as done' });
+  }
+});
+
 // ─── Employee: toggle a checkpoint on today's instance ─────────────────────
 // POST /recurring-tasks/instances/:instanceId/checkpoints/:checkpointId/toggle
 router.post('/instances/:instanceId/checkpoints/:checkpointId/toggle', async (req, res) => {
