@@ -476,42 +476,28 @@
 
         <!-- REPORTS (admin only) -->
         <section id="view-reports" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">📊 Reports</h2>
-            <p class="view-sub">Employee-wise task performance and time tracking.</p>
-          </div>
-
-          <!-- Filter bar -->
-          <div class="filter-panel" style="margin-bottom:20px">
-            <div class="filter-row" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
-              <div class="filter-field">
-                <label class="filter-label">Time period</label>
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <button class="report-range-btn active" data-range="day">Today</button>
-                  <button class="report-range-btn" data-range="week">This week</button>
-                  <button class="report-range-btn" data-range="month">This month</button>
-                  <button class="report-range-btn" data-range="custom">Custom</button>
-                </div>
+          <div class="rpt-screen-header">
+            <div>
+              <h2 class="view-title">&#128202; Reports</h2>
+              <p class="view-sub">Work &amp; Verification Dashboard</p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <div style="display:flex;gap:6px">
+                <button class="report-range-btn active" data-range="day">Today</button>
+                <button class="report-range-btn" data-range="week">This week</button>
+                <button class="report-range-btn" data-range="month">This month</button>
+                <button class="report-range-btn" data-range="custom">Custom</button>
               </div>
-              <div id="reportCustomDates" style="display:none;gap:8px;display:none;align-items:flex-end">
-                <div class="filter-field">
-                  <label class="filter-label">From</label>
-                  <input type="date" id="reportFrom" />
-                </div>
-                <div class="filter-field">
-                  <label class="filter-label">To</label>
-                  <input type="date" id="reportTo" />
-                </div>
+              <div id="reportCustomDates" style="display:none;gap:8px;align-items:center">
+                <input type="date" id="reportFrom" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" />
+                <span style="color:var(--text-muted);font-size:12px">to</span>
+                <input type="date" id="reportTo" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" />
               </div>
-              <button id="loadReportBtn" class="primary-btn primary-btn-inline" style="height:36px">Load report</button>
+              <button id="loadReportBtn" class="primary-btn primary-btn-inline" style="height:36px">Load</button>
+              <button id="exportPdfBtn" onclick="exportReportPdf()" style="height:36px;padding:0 16px;border-radius:8px;border:1.5px solid #6366f1;background:#fff;color:#6366f1;font-weight:600;font-size:13px;cursor:pointer;display:none">&#11015; Export PDF</button>
             </div>
           </div>
-
-          <!-- Summary cards -->
-          <div id="reportSummaryCards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
-
-          <!-- Employee accordion -->
-          <div id="reportContent"></div>
+          <div id="reportPrintArea"></div>
         </section>
 
       </main>
