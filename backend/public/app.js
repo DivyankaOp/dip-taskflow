@@ -385,6 +385,7 @@ function switchView(viewKey) {
   if (viewKey === 'corrections')   loadCorrections();
   if (viewKey === 'recurring')     loadRecurringView();
   if (viewKey === 'reports')       initReportsView();
+  if (viewKey === 'reports')       initReportsView();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
