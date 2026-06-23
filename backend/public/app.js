@@ -982,6 +982,10 @@ els.correctionForm.addEventListener('submit', async (e) => {
   } catch (err) { els.correctionFormMsg.textContent = err.message; els.correctionFormMsg.hidden = false; }
 });
 
+// Tracks which task IDs have had "Start Verification" clicked this session.
+// Survives re-renders so the button doesn't reset when another task is actioned.
+const activeVerifications = new Set();
+
 async function loadVerifications() {
   els.verificationsTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
   els.verificationsList.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -1165,16 +1169,28 @@ function renderVerificationsTable(tbody, tasks) {
     tdDate.textContent = fmtDate(task.verification_requested_at ?? task.updated_at ?? task.created_at);
 
     // Actions — "Start Verification" → then Verify or Send for Correction
+    // activeVerifications Set ensures button stays in "started" state even after re-render
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
-    const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+
+    function showVerifyActions() {
       tdActions.innerHTML = '';
       tdActions.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
       }));
       tdActions.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-    });
-    tdActions.appendChild(startBtn);
+    }
+
+    if (activeVerifications.has(task.id)) {
+      // Already started before re-render — show verify/correction buttons directly
+      showVerifyActions();
+    } else {
+      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+        activeVerifications.add(task.id);
+        showVerifyActions();
+      });
+      tdActions.appendChild(startBtn);
+    }
 
     tr.append(tdReqId, tdSr, tdProject, tdTaskType, tdSubmittedBy, tdAttach, tdDate, tdActions);
     tbody.appendChild(tr);
