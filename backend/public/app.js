@@ -1931,7 +1931,13 @@ async function saveRecurringTask() {
 
 async function loadRecurringView() {
   const isAdmin = state.user.role === 'admin';
-  const canManageRecurring = isAdmin || !!state.user.can_add_employee;
+  // NOTE: this used to also check state.user.can_add_employee, which is an
+  // "Add employee" permission unrelated to recurring tasks. That caused any
+  // employee granted that one permission to also get the admin recurring
+  // task view (Add Recurring Task button, edit/delete, etc.), even though
+  // the backend only allows actual admins to create/edit/delete recurring
+  // tasks (see requireAdmin in recurring_tasks.js). Gate on isAdmin only.
+  const canManageRecurring = isAdmin;
   recEls.openBtn().hidden = !canManageRecurring;
   recEls.adminWrap().hidden = !canManageRecurring;
   recEls.empWrap().hidden = canManageRecurring;
@@ -2216,7 +2222,27 @@ function buildEmployeeRecurringCard(task) {
     </div>` : ''}
   `;
 
-  // Attach checkbox handlers
+  // Attach "mark as done" handler (tasks with no checkpoints)
+  const markDoneBtn = card.querySelector('.mark-done-btn');
+  if (markDoneBtn) {
+    markDoneBtn.addEventListener('click', async () => {
+      const instanceId = markDoneBtn.dataset.instanceId;
+      if (!instanceId) return;
+      markDoneBtn.disabled = true;
+      try {
+        const updated = await api(`/recurring-tasks/instances/${instanceId}/complete`, { method: 'POST' });
+        const tasks = await api('/recurring-tasks/my');
+        renderEmployeeRecurringList(tasks);
+        renderEmployeeRecurringTable(tasks);
+        if (updated.status === 'Completed') showToast('Task marked as done ✅', 'success');
+      } catch (err) {
+        markDoneBtn.disabled = false;
+        showToast(err.message, 'error');
+      }
+    });
+  }
+
+  // Attach checkpoint handlers
   card.querySelectorAll('.cp-checkbox').forEach(cb => {
     cb.addEventListener('change', async (e) => {
       const label = e.target.closest('label');
