@@ -466,7 +466,7 @@
                   <thead>
                     <tr>
                       <th>Task</th><th>Frequency</th><th>Period</th>
-                      <th>Checkpoints</th><th>Status</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody id="employeeRecurringTableBody"></tbody>
@@ -727,6 +727,24 @@
           <button type="submit" class="primary-btn primary-btn-inline">Submit</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Recurring Task Checkpoint Modal (employee: tick checkpoints, then Submit) -->
+  <div id="checkpointModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="checkpointModalTitle">Checkpoints</h3>
+        <button class="modal-close" id="closeCheckpointModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="checkpointModalList"></div>
+        <p id="checkpointModalMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelCheckpointModal">Cancel</button>
+          <button type="button" class="primary-btn primary-btn-inline" id="submitCheckpointModal">Submit</button>
+        </div>
+      </div>
     </div>
   </div>
 
