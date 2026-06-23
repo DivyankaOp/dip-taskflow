@@ -15,7 +15,15 @@ app.use('/api/sites',     require('./routes/sites'));
 app.use('/api/recurring-tasks', require('./routes/recurring_tasks'));
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => {
+    // Prevent the browser/CDN from caching the app shell or its script —
+    // this app is updated frequently and a stale cached copy showing the
+    // wrong UI (e.g. admin controls to non-admins) is worse than the
+    // small perf cost of always revalidating.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+}));
 
 const PORT = process.env.PORT || 4000;
 
