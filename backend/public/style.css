@@ -625,6 +625,18 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .ticket-meta { font-size: 0.74rem; color: var(--muted); }
 
 /* ================================================================
+   CHECKBOX LABEL (used in Apply Leave half-day toggle)
+   ================================================================ */
+.checkbox-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.86rem; font-weight: 600; color: var(--ink);
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: var(--primary-mid); cursor: pointer;
+}
+
+/* ================================================================
    MODALS
    ================================================================ */
 .modal-backdrop {
