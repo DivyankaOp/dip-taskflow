@@ -93,6 +93,30 @@ const els = {
   closeTicketModal: document.getElementById('closeTicketModal'),
   cancelTicketModal: document.getElementById('cancelTicketModal'),
 
+  // Leave (apply — everyone)
+  myLeavesList: document.getElementById('myLeavesList'),
+  openApplyLeave: document.getElementById('openApplyLeave'),
+  leaveModal: document.getElementById('leaveModal'),
+  leaveForm: document.getElementById('leaveForm'),
+  leaveFormMsg: document.getElementById('leaveFormMsg'),
+  leaveFrom: document.getElementById('leave-from'),
+  leaveTo: document.getElementById('leave-to'),
+  leaveHalfDay: document.getElementById('leave-halfday'),
+  leaveReason: document.getElementById('leave-reason'),
+  closeLeaveModal: document.getElementById('closeLeaveModal'),
+  cancelLeaveModal: document.getElementById('cancelLeaveModal'),
+
+  // Leave approvals (admin)
+  leaveApprovalsList: document.getElementById('leaveApprovalsList'),
+  leaveApprovalsStatusFilter: document.getElementById('leaveApprovalsStatusFilter'),
+  rejectLeaveModal: document.getElementById('rejectLeaveModal'),
+  rejectLeaveForm: document.getElementById('rejectLeaveForm'),
+  rejectLeaveFormMsg: document.getElementById('rejectLeaveFormMsg'),
+  rejectLeaveReason: document.getElementById('reject-leave-reason'),
+  closeRejectLeaveModal: document.getElementById('closeRejectLeaveModal'),
+  cancelRejectLeaveModal: document.getElementById('cancelRejectLeaveModal'),
+
+
   // Corrections view (employee)
   correctionsList: document.getElementById('correctionsList'),
   correctionsTableBody: document.getElementById('correctionsTableBody'),
@@ -155,7 +179,8 @@ let state = {
   master: { departments: [], projects: [], taskTypes: [], employees: [] },
   activeView: null,
   pendingTaskId: null,
-  pendingVerifierId: null
+  pendingVerifierId: null,
+  pendingLeaveId: null
 };
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -339,6 +364,13 @@ function buildNav() {
     }
   }
 
+  // Leave section — everyone can apply; admin also gets the approvals queue.
+  const leaveLabel = document.createElement('div');
+  leaveLabel.className = 'nav-section-label'; leaveLabel.textContent = 'Leave';
+  els.navList.appendChild(leaveLabel);
+  els.navList.appendChild(makeNavButton('applyleave', '🌴 Apply Leave'));
+  if (isAdmin) els.navList.appendChild(makeNavButton('leaveapprovals', '🗒️ Leave Approvals'));
+
   if (isAdmin || state.user.can_verify) {
     const verifyLabel = document.createElement('div');
     verifyLabel.className = 'nav-section-label'; verifyLabel.textContent = 'Verification';
@@ -385,7 +417,8 @@ function switchView(viewKey) {
   if (viewKey === 'corrections')   loadCorrections();
   if (viewKey === 'recurring')     loadRecurringView();
   if (viewKey === 'reports')       initReportsView();
-  if (viewKey === 'reports')       initReportsView();
+  if (viewKey === 'applyleave')      loadMyLeaves();
+  if (viewKey === 'leaveapprovals')  loadLeaveApprovals();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -1301,6 +1334,173 @@ function renderTicketsList(tickets) {
     els.ticketsList.appendChild(card);
   });
 }
+
+// ─── Leave: apply (everyone) ───────────────────────────────────────────────────
+function openLeaveModal() {
+  els.leaveFormMsg.hidden = true;
+  els.leaveForm.reset();
+  els.leaveModal.hidden = false;
+}
+els.openApplyLeave.addEventListener('click', openLeaveModal);
+els.closeLeaveModal.addEventListener('click', () => { els.leaveModal.hidden = true; });
+els.cancelLeaveModal.addEventListener('click', () => { els.leaveModal.hidden = true; });
+els.leaveForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.leaveFormMsg.hidden = true;
+  try {
+    await api('/leaves', {
+      method: 'POST',
+      body: {
+        from_date: els.leaveFrom.value,
+        to_date: els.leaveTo.value,
+        is_half_day: els.leaveHalfDay.checked,
+        reason: els.leaveReason.value.trim()
+      }
+    });
+    showToast('Leave request submitted ✅', 'success');
+    els.leaveModal.hidden = true;
+    if (state.activeView === 'applyleave') loadMyLeaves();
+  } catch (err) { els.leaveFormMsg.textContent = err.message; els.leaveFormMsg.hidden = false; }
+});
+
+async function loadMyLeaves() {
+  els.myLeavesList.innerHTML = '<div class="empty-state">Loading your leave requests…</div>';
+  try {
+    const leaves = await api('/leaves/my');
+    renderMyLeavesList(leaves);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function leavePillClass(status) {
+  if (status === 'Approved') return 'pill-Completed';
+  if (status === 'Rejected') return 'pill-Rejected';
+  return 'pill-Pending';
+}
+
+function leaveDateRangeLabel(leave) {
+  const from = fmtDateOnly(leave.from_date);
+  const to = fmtDateOnly(leave.to_date);
+  const range = leave.from_date === leave.to_date ? from : `${from} → ${to}`;
+  return leave.is_half_day ? `${range} (Half day)` : range;
+}
+
+function renderMyLeavesList(leaves) {
+  if (!leaves.length) {
+    els.myLeavesList.innerHTML = `<div class="empty-state"><span class="emoji">🌴</span>No leave requests yet</div>`;
+    return;
+  }
+  els.myLeavesList.innerHTML = '';
+  leaves.forEach((leave) => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <span class="pill ${leavePillClass(leave.status)}">${leave.status}</span>
+        <div class="row-actions"></div>
+      </div>
+      <div class="ticket-desc"><strong>${escapeHtml(leaveDateRangeLabel(leave))}</strong></div>
+      <p class="ticket-desc">${escapeHtml(leave.reason)}</p>
+      ${leave.decision_note ? `<div class="ticket-meta">Admin's note: ${escapeHtml(leave.decision_note)}</div>` : ''}
+      <div class="ticket-meta">
+        Applied ${fmtDate(leave.created_at)}
+        ${leave.decided_at ? ` · Decided by <strong>${escapeHtml(leave.decided_by_user?.full_name ?? '—')}</strong> on ${fmtDate(leave.decided_at)}` : ''}
+      </div>
+    `;
+    if (leave.status === 'Pending') {
+      const actionsCell = card.querySelector('.row-actions');
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'action-btn action-reject';
+      cancelBtn.textContent = '✕ Cancel';
+      cancelBtn.addEventListener('click', async () => {
+        if (!confirm('Cancel this leave request?')) return;
+        try {
+          await api(`/leaves/${leave.id}`, { method: 'DELETE' });
+          showToast('Leave request cancelled', 'success'); loadMyLeaves();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+      actionsCell.appendChild(cancelBtn);
+    }
+    els.myLeavesList.appendChild(card);
+  });
+}
+
+// ─── Leave: approvals (admin) ──────────────────────────────────────────────────
+async function loadLeaveApprovals() {
+  els.leaveApprovalsList.innerHTML = '<div class="empty-state">Loading leave requests…</div>';
+  try {
+    const status = els.leaveApprovalsStatusFilter.value;
+    const leaves = await api(`/leaves/all${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+    renderLeaveApprovalsList(leaves);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+els.leaveApprovalsStatusFilter.addEventListener('change', loadLeaveApprovals);
+
+function renderLeaveApprovalsList(leaves) {
+  if (!leaves.length) {
+    els.leaveApprovalsList.innerHTML = `<div class="empty-state"><span class="emoji">🗒️</span>No leave requests found</div>`;
+    return;
+  }
+  els.leaveApprovalsList.innerHTML = '';
+  leaves.forEach((leave) => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <span class="pill ${leavePillClass(leave.status)}">${leave.status}</span>
+        <div class="row-actions"></div>
+      </div>
+      <div class="ticket-desc"><strong>${escapeHtml(leave.user?.full_name ?? '—')}</strong> · ${escapeHtml(leaveDateRangeLabel(leave))}</div>
+      <p class="ticket-desc">${escapeHtml(leave.reason)}</p>
+      ${leave.decision_note ? `<div class="ticket-meta">Decision note: ${escapeHtml(leave.decision_note)}</div>` : ''}
+      <div class="ticket-meta">
+        Applied ${fmtDate(leave.created_at)}
+        ${leave.decided_at ? ` · Decided by <strong>${escapeHtml(leave.decided_by_user?.full_name ?? '—')}</strong> on ${fmtDate(leave.decided_at)}` : ''}
+      </div>
+    `;
+    if (leave.status === 'Pending') {
+      const actionsCell = card.querySelector('.row-actions');
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'action-btn action-complete';
+      approveBtn.textContent = '✅ Approve';
+      approveBtn.addEventListener('click', async () => {
+        try {
+          await api(`/leaves/${leave.id}/approve`, { method: 'PATCH' });
+          showToast('Leave approved ✅', 'success'); loadLeaveApprovals();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'action-btn action-reject';
+      rejectBtn.textContent = '✕ Reject';
+      rejectBtn.addEventListener('click', () => openRejectLeaveModal(leave.id));
+
+      actionsCell.appendChild(approveBtn);
+      actionsCell.appendChild(rejectBtn);
+    }
+    els.leaveApprovalsList.appendChild(card);
+  });
+}
+
+function openRejectLeaveModal(leaveId) {
+  state.pendingLeaveId = leaveId;
+  els.rejectLeaveFormMsg.hidden = true;
+  els.rejectLeaveReason.value = '';
+  els.rejectLeaveModal.hidden = false;
+}
+els.closeRejectLeaveModal.addEventListener('click', () => { els.rejectLeaveModal.hidden = true; });
+els.cancelRejectLeaveModal.addEventListener('click', () => { els.rejectLeaveModal.hidden = true; });
+els.rejectLeaveForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.rejectLeaveFormMsg.hidden = true;
+  try {
+    await api(`/leaves/${state.pendingLeaveId}/reject`, {
+      method: 'PATCH',
+      body: { reason: els.rejectLeaveReason.value.trim() }
+    });
+    showToast('Leave rejected', 'success');
+    els.rejectLeaveModal.hidden = true;
+    loadLeaveApprovals();
+  } catch (err) { els.rejectLeaveFormMsg.textContent = err.message; els.rejectLeaveFormMsg.hidden = false; }
+});
 
 // ─── Manage Employees ─────────────────────────────────────────────────────────
 async function loadEmployees() {
