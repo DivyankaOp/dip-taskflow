@@ -386,6 +386,40 @@
           <div id="verificationsList" class="task-list view-mobile-only"></div>
         </section>
 
+        <!-- APPLY LEAVE (everyone) -->
+        <section id="view-applyleave" class="view" hidden>
+          <div class="view-header-row">
+            <div class="view-heading" style="margin-bottom:0">
+              <h2 class="view-title">🌴 Apply Leave</h2>
+              <p class="view-sub">Submit a leave request and track its approval status.</p>
+            </div>
+            <button id="openApplyLeave" class="primary-btn primary-btn-inline">+ Apply leave</button>
+          </div>
+          <div id="myLeavesList" class="ticket-list" style="margin-top:20px"></div>
+        </section>
+
+        <!-- LEAVE APPROVALS (admin) -->
+        <section id="view-leaveapprovals" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">🗒️ Leave Approvals</h2>
+            <p class="view-sub">Review leave requests raised by the team and approve or reject them.</p>
+          </div>
+          <div class="filter-panel">
+            <div class="filter-row">
+              <div class="filter-field">
+                <label class="filter-label">Status</label>
+                <select id="leaveApprovalsStatusFilter">
+                  <option value="">All</option>
+                  <option value="Pending" selected>Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="leaveApprovalsList" class="ticket-list" style="margin-top:20px"></div>
+        </section>
+
         <!-- TICKETS -->
         <section id="view-tickets" class="view" hidden>
           <div class="view-header-row">
@@ -725,6 +759,64 @@
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelTicketModal">Cancel</button>
           <button type="submit" class="primary-btn primary-btn-inline">Submit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Apply Leave Modal -->
+  <div id="leaveModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Apply for leave</h3>
+        <button class="modal-close" id="closeLeaveModal">&times;</button>
+      </div>
+      <form id="leaveForm" class="modal-body">
+        <div class="field-grid">
+          <div class="field">
+            <label for="leave-from">From date <span class="req">*</span></label>
+            <input id="leave-from" type="date" required />
+          </div>
+          <div class="field">
+            <label for="leave-to">To date <span class="req">*</span></label>
+            <input id="leave-to" type="date" required />
+          </div>
+        </div>
+        <div class="field">
+          <label class="checkbox-label">
+            <input id="leave-halfday" type="checkbox" />
+            Half day leave
+          </label>
+        </div>
+        <div class="field">
+          <label for="leave-reason">Reason <span class="req">*</span></label>
+          <textarea id="leave-reason" rows="3" placeholder="Why are you taking leave..." required></textarea>
+        </div>
+        <p id="leaveFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelLeaveModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Submit request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reject Leave Modal (admin — reason optional) -->
+  <div id="rejectLeaveModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Reject leave request</h3>
+        <button class="modal-close" id="closeRejectLeaveModal">&times;</button>
+      </div>
+      <form id="rejectLeaveForm" class="modal-body">
+        <div class="field">
+          <label for="reject-leave-reason">Reason <span class="optional">(optional)</span></label>
+          <textarea id="reject-leave-reason" rows="3" placeholder="Let them know why (optional)..."></textarea>
+        </div>
+        <p id="rejectLeaveFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelRejectLeaveModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Reject request</button>
         </div>
       </form>
     </div>
