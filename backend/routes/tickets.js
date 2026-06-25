@@ -33,7 +33,7 @@ const TICKET_SELECT = `
   solved_by_user:users!tickets_solution_by_fkey ( id, full_name )
 `;
 
-// ----------------------------- raise a ticket (anyone logged in) -----------------------------
+// ─── Raise a ticket (anyone logged in) ───────────────────────────────────────
 router.post('/', upload.single('media'), async (req, res) => {
   try {
     const { task_id, category, description } = req.body || {};
@@ -44,7 +44,6 @@ router.post('/', upload.single('media'), async (req, res) => {
       return res.status(400).json({ error: 'Please select a category' });
     }
 
-    // Upload screenshot / screen recording if provided
     let attachment_url = null;
     if (req.file) {
       attachment_url = await uploadFile(req.file, 'ticket-media');
@@ -71,7 +70,7 @@ router.post('/', upload.single('media'), async (req, res) => {
   }
 });
 
-// ----------------------------- list tickets -----------------------------
+// ─── List tickets ─────────────────────────────────────────────────────────────
 // Admin / can_resolve_tickets / is_mis_executive → sees all
 // Everyone else → sees only their own
 router.get('/', async (req, res) => {
@@ -87,7 +86,10 @@ router.get('/', async (req, res) => {
       seeAll = !!me?.can_resolve_tickets || !!me?.is_mis_executive;
     }
 
-    let query = supabase.from('tickets').select(TICKET_SELECT).order('created_at', { ascending: false });
+    let query = supabase
+      .from('tickets')
+      .select(TICKET_SELECT)
+      .order('created_at', { ascending: false });
     if (!seeAll) query = query.eq('raised_by', req.user.id);
 
     const { data, error } = await query;
@@ -99,21 +101,27 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ----------------------------- solve (admin or can_resolve_tickets) -----------------------------
+// ─── Solve / resolve (admin always; others need can_resolve_tickets flag) ────
 router.patch('/:id/solve', async (req, res) => {
-  // Admins can always solve; other users need the can_resolve_tickets flag.
-  if (req.user.role !== 'admin') {
-    const { data: me, error: meErr } = await supabase
-      .from('users').select('can_resolve_tickets').eq('id', req.user.id).maybeSingle();
-    if (meErr || !me?.can_resolve_tickets) {
-      return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
-    }
-  }
   try {
+    // Admins bypass permission check; others need the flag
+    if (req.user.role !== 'admin') {
+      const { data: me, error: meErr } = await supabase
+        .from('users')
+        .select('can_resolve_tickets')
+        .eq('id', req.user.id)
+        .maybeSingle();
+      if (meErr) throw meErr;
+      if (!me?.can_resolve_tickets) {
+        return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
+      }
+    }
+
     const { solution } = req.body || {};
     if (!solution || !solution.trim()) {
       return res.status(400).json({ error: 'Please provide a solution' });
     }
+
     const { data, error } = await supabase
       .from('tickets')
       .update({
