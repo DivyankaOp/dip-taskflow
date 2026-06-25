@@ -708,8 +708,23 @@
               <p class="view-sub" id="drptSubtitle">Previous day's task status report</p>
             </div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <input type="date" id="drptDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
-              <button id="drptGenBtn" class="primary-btn primary-btn-inline">🔄 Generate</button>
+              <!-- Mode toggle -->
+              <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:0.82rem">
+                <button id="drptModeSingle" class="drpt-mode-btn drpt-mode-active" style="padding:7px 14px;background:var(--primary);color:#fff;border:none;cursor:pointer;font-size:0.82rem">📅 Single Date</button>
+                <button id="drptModeRange" class="drpt-mode-btn" style="padding:7px 14px;background:transparent;color:var(--text);border:none;cursor:pointer;font-size:0.82rem">📊 PMS Range</button>
+              </div>
+              <!-- Single date controls -->
+              <div id="drptSingleControls" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="date" id="drptDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+                <button id="drptGenBtn" class="primary-btn primary-btn-inline">🔄 Generate</button>
+              </div>
+              <!-- Range controls (PMS mode) -->
+              <div id="drptRangeControls" style="display:none;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="date" id="drptFrom" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+                <span style="color:var(--text-muted);font-size:0.85rem">to</span>
+                <input type="date" id="drptTo" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+                <button id="drptRangeGenBtn" class="primary-btn primary-btn-inline">🔄 Generate</button>
+              </div>
               <button id="drptDownloadBtn" class="ghost-btn" style="display:none">⬇️ Download PDF</button>
             </div>
           </div>
