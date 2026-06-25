@@ -690,7 +690,7 @@ async function loadOverdueTasks() {
 // detail drawer for that task.
 function renderOverdueTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
@@ -715,15 +715,22 @@ function renderOverdueTasksTable(tbody, tasks) {
       ? `<span class="source-badge source-verification">⏳ Verification</span>`
       : `<span class="source-badge source-assignment">📋 Assignment</span>`;
 
-    // Planned date (how overdue, shown in red) + extension note if active
+    // Planned date
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
     tdDate.innerHTML = `
       <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
-      <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue <= 0 ? 'Overdue today' : `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`}</div>
       ${isOverdueExtensionActive(task) ? `<div style="color:var(--emerald);font-size:0.75rem;margin-top:2px">⏱ Extended to ${fmtDate(task.overdue_extended_until)}</div>` : ''}
     `;
+
+    // Days Overdue — separate column
+    const tdDaysOverdue = document.createElement('td');
+    tdDaysOverdue.style.whiteSpace = 'nowrap';
+    tdDaysOverdue.style.textAlign = 'center';
+    tdDaysOverdue.innerHTML = daysOverdue <= 0
+      ? `<span style="color:#d33;font-weight:700;font-size:0.85rem">Today</span>`
+      : `<span style="color:#d33;font-weight:700;font-size:1rem">${daysOverdue}</span><br><span style="color:#d33;font-size:0.72rem">day${daysOverdue !== 1 ? 's' : ''}</span>`;
 
     // Assigned to
     const tdAssigned = document.createElement('td');
@@ -755,7 +762,7 @@ function renderOverdueTasksTable(tbody, tasks) {
     tdActions.addEventListener('click', (e) => e.stopPropagation()); // don't open drawer when using the menu
     tdActions.appendChild(buildOverdueMenuElement(task));
 
-    tr.append(tdSr, tdDetails, tdSource, tdDate, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
+    tr.append(tdSr, tdDetails, tdSource, tdDate, tdDaysOverdue, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
     tr.addEventListener('click', () => openOverdueDrawer(task.id));
     tbody.appendChild(tr);
   });
@@ -1483,6 +1490,7 @@ function renderVerificationsTable(tbody, tasks) {
         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
       }));
       tdActions.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+      tdActions.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     }
 
     if (activeVerifications.has(task.id)) {
@@ -1774,7 +1782,10 @@ function renderTicketsList(tickets) {
 
   const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
 
-  tickets.forEach((ticket) => {
+  const openTickets = tickets.filter(t => t.status === 'Open');
+  const resolvedTickets = tickets.filter(t => t.status !== 'Open');
+
+  function buildCard(ticket) {
     const card = document.createElement('div');
     card.className = 'ticket-card';
 
@@ -1819,7 +1830,6 @@ function renderTicketsList(tickets) {
 
     const actionsCell = card.querySelector('.row-actions');
 
-    // Admin/resolver: show Solution button on open tickets
     if (canSolve && ticket.status === 'Open') {
       const solveBtn = document.createElement('button');
       solveBtn.className = 'action-btn action-verify';
@@ -1828,8 +1838,27 @@ function renderTicketsList(tickets) {
       actionsCell.appendChild(solveBtn);
     }
 
-    els.ticketsList.appendChild(card);
-  });
+    return card;
+  }
+
+  // ── Open tickets section ──
+  if (openTickets.length) {
+    const openHeader = document.createElement('div');
+    openHeader.className = 'ticket-section-header';
+    openHeader.innerHTML = `<span class="ticket-section-title">🟠 Open Tickets</span><span class="tab-count" style="background:var(--amber,#f59e0b);color:#fff">${openTickets.length}</span>`;
+    els.ticketsList.appendChild(openHeader);
+    openTickets.forEach(t => els.ticketsList.appendChild(buildCard(t)));
+  }
+
+  // ── Resolved tickets section ──
+  if (resolvedTickets.length) {
+    const resolvedHeader = document.createElement('div');
+    resolvedHeader.className = 'ticket-section-header';
+    resolvedHeader.style.marginTop = openTickets.length ? '28px' : '0';
+    resolvedHeader.innerHTML = `<span class="ticket-section-title">✅ Resolved Tickets</span><span class="tab-count" style="background:var(--emerald,#10b981);color:#fff">${resolvedTickets.length}</span>`;
+    els.ticketsList.appendChild(resolvedHeader);
+    resolvedTickets.forEach(t => els.ticketsList.appendChild(buildCard(t)));
+  }
 }
 
 // ─── Leave: apply (everyone) ───────────────────────────────────────────────────
