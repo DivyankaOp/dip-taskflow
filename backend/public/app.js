@@ -1027,7 +1027,7 @@ function buildCardMenuItems(task, { showAssignee }) {
   if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
     items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
   }
-  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id) });
+  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description) });
   return items;
 }
 
@@ -1529,26 +1529,112 @@ els.reassignForm.addEventListener('submit', async (e) => {
 });
 
 // ─── Tickets ──────────────────────────────────────────────────────────────────
-function openTicketModal(taskId) {
-  state.pendingTaskId = taskId || null; els.ticketFormMsg.hidden = true;
-  els.ticketDescription.value = ''; els.ticketModal.hidden = false;
+
+// Category icons/labels map
+const TICKET_CATEGORY_LABELS = {
+  'Technical': '🔧 Technical',
+  'Task':      '📋 Task related',
+  'HR':        '👤 HR / Leave',
+  'Access':    '🔑 Access / Login',
+  'Payment':   '💰 Payment / Salary',
+  'Other':     '📌 Other',
+  'General':   '📌 General'
+};
+
+function openTicketModal(taskId, taskDescription) {
+  state.pendingTaskId = taskId || null;
+  els.ticketFormMsg.hidden = true;
+  els.ticketDescription.value = '';
+  document.getElementById('ticket-category').value = '';
+
+  // Show/hide the linked-task banner
+  const banner     = document.getElementById('ticketTaskBanner');
+  const bannerText = document.getElementById('ticketTaskBannerText');
+  if (taskId && taskDescription) {
+    bannerText.textContent = taskDescription.length > 80
+      ? taskDescription.slice(0, 80) + '…'
+      : taskDescription;
+    banner.hidden = false;
+    // Pre-select Task category when raised from a task
+    document.getElementById('ticket-category').value = 'Task';
+  } else {
+    banner.hidden = true;
+  }
+
+  els.ticketModal.hidden = false;
 }
+
 els.openRaiseTicket.addEventListener('click', () => openTicketModal(null));
-els.closeTicketModal.addEventListener('click', () => { els.ticketModal.hidden = true; });
+els.closeTicketModal.addEventListener('click',  () => { els.ticketModal.hidden = true; });
 els.cancelTicketModal.addEventListener('click', () => { els.ticketModal.hidden = true; });
+
 els.ticketForm.addEventListener('submit', async (e) => {
-  e.preventDefault(); els.ticketFormMsg.hidden = true;
+  e.preventDefault();
+  els.ticketFormMsg.hidden = true;
+  const category    = document.getElementById('ticket-category').value;
+  const description = els.ticketDescription.value.trim();
+  if (!category)    { els.ticketFormMsg.textContent = 'Please select a category'; els.ticketFormMsg.hidden = false; return; }
+  if (!description) { els.ticketFormMsg.textContent = 'Please describe the issue'; els.ticketFormMsg.hidden = false; return; }
   try {
     await api('/tickets', {
       method: 'POST',
-      body: { task_id: state.pendingTaskId, description: els.ticketDescription.value.trim() }
+      body: { task_id: state.pendingTaskId, category, description }
     });
     showToast('Ticket raised ✅', 'success');
     els.ticketModal.hidden = true;
     if (state.activeView === 'tickets') loadTickets();
-  } catch (err) { els.ticketFormMsg.textContent = err.message; els.ticketFormMsg.hidden = false; }
+  } catch (err) {
+    els.ticketFormMsg.textContent = err.message;
+    els.ticketFormMsg.hidden = false;
+  }
 });
 
+// ─── Solution Modal (admin) ───────────────────────────────────────────────────
+let _solvingTicketId = null;
+
+function openSolutionModal(ticket) {
+  _solvingTicketId = ticket.id;
+  document.getElementById('solution-text').value = '';
+  document.getElementById('solutionFormMsg').hidden = true;
+
+  // Show a brief summary of the ticket being resolved
+  const info = document.getElementById('solutionTicketInfo');
+  info.innerHTML = `
+    <div class="solution-ticket-summary">
+      <span class="pill ${ticket.status === 'Open' ? 'pill-Pending' : 'pill-Completed'} pill-sm">${ticket.status}</span>
+      <span class="solution-category-tag">${escapeHtml(TICKET_CATEGORY_LABELS[ticket.category] || ticket.category)}</span>
+      <p class="solution-ticket-desc">"${escapeHtml(ticket.description.length > 120 ? ticket.description.slice(0,120)+'…' : ticket.description)}"</p>
+      <p class="solution-ticket-meta">
+        Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong>
+        ${ticket.task ? ` · Task: <em>${escapeHtml(ticket.task.description.slice(0,60))}${ticket.task.description.length > 60 ? '…' : ''}</em>` : ''}
+        · ${fmtDate(ticket.created_at)}
+      </p>
+    </div>
+  `;
+
+  document.getElementById('solutionModal').hidden = false;
+}
+
+document.getElementById('closeSolutionModal').addEventListener('click',  () => { document.getElementById('solutionModal').hidden = true; });
+document.getElementById('cancelSolutionModal').addEventListener('click', () => { document.getElementById('solutionModal').hidden = true; });
+
+document.getElementById('submitSolutionBtn').addEventListener('click', async () => {
+  const solution = document.getElementById('solution-text').value.trim();
+  const msgEl    = document.getElementById('solutionFormMsg');
+  msgEl.hidden   = true;
+  if (!solution) { msgEl.textContent = 'Please write a solution before submitting'; msgEl.hidden = false; return; }
+  try {
+    await api(`/tickets/${_solvingTicketId}/solve`, { method: 'PATCH', body: { solution } });
+    showToast('Solution submitted & ticket resolved ✅', 'success');
+    document.getElementById('solutionModal').hidden = true;
+    loadTickets();
+  } catch (err) {
+    msgEl.textContent = err.message;
+    msgEl.hidden = false;
+  }
+});
+
+// ─── Load & Render ────────────────────────────────────────────────────────────
 async function loadTickets() {
   els.ticketsList.innerHTML = '<div class="empty-state">Loading tickets…</div>';
   try {
@@ -1563,34 +1649,57 @@ function renderTicketsList(tickets) {
     return;
   }
   els.ticketsList.innerHTML = '';
+
+  const isAdmin = state.user.role === 'admin' || state.user.can_resolve_tickets;
+
   tickets.forEach((ticket) => {
     const card = document.createElement('div');
     card.className = 'ticket-card';
+
+    const catLabel = TICKET_CATEGORY_LABELS[ticket.category] || ticket.category || '';
+
     card.innerHTML = `
       <div class="ticket-top">
-        <span class="pill ${ticket.status === 'Open' ? 'pill-Pending' : 'pill-Completed'}">${ticket.status}</span>
+        <div class="ticket-top-left">
+          <span class="pill ${ticket.status === 'Open' ? 'pill-Pending' : 'pill-Completed'}">${ticket.status}</span>
+          ${catLabel ? `<span class="ticket-category-chip">${escapeHtml(catLabel)}</span>` : ''}
+        </div>
         <div class="row-actions"></div>
       </div>
+
+      ${ticket.task ? `
+        <div class="ticket-task-ref">
+          🔗 Task: <em>${escapeHtml(ticket.task.description.slice(0,80))}${ticket.task.description.length > 80 ? '…' : ''}</em>
+        </div>` : ''}
+
       <p class="ticket-desc">${escapeHtml(ticket.description)}</p>
+
       <div class="ticket-meta">
         Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong>
-        ${ticket.task ? ` · on task: ${escapeHtml(ticket.task.description.slice(0,60))}${ticket.task.description.length > 60 ? '…' : ''}` : ''}
         · ${fmtDate(ticket.created_at)}
       </div>
+
+      ${ticket.solution ? `
+        <div class="ticket-solution-box">
+          <div class="ticket-solution-header">💡 Solution</div>
+          <p class="ticket-solution-text">${escapeHtml(ticket.solution)}</p>
+          <div class="ticket-solution-meta">
+            By <strong>${escapeHtml(ticket.solved_by_user?.full_name ?? '—')}</strong>
+            · ${fmtDate(ticket.solution_at)}
+          </div>
+        </div>` : ''}
     `;
-    if (state.user.role === 'admin' && ticket.status === 'Open') {
-      const actionsCell = card.querySelector('.row-actions');
-      const resolveBtn = document.createElement('button');
-      resolveBtn.className = 'action-btn action-complete';
-      resolveBtn.textContent = '✅ Mark resolved';
-      resolveBtn.addEventListener('click', async () => {
-        try {
-          await api(`/tickets/${ticket.id}/resolve`, { method: 'PATCH' });
-          showToast('Ticket resolved ✅', 'success'); loadTickets();
-        } catch (err) { showToast(err.message, 'error'); }
-      });
-      actionsCell.appendChild(resolveBtn);
+
+    const actionsCell = card.querySelector('.row-actions');
+
+    if (isAdmin && ticket.status === 'Open') {
+      const solveBtn = document.createElement('button');
+      solveBtn.className = 'action-btn action-verify';
+      solveBtn.textContent = '💡 Solution';
+      solveBtn.addEventListener('click', () => openSolutionModal(ticket));
+      actionsCell.appendChild(solveBtn);
     }
+
     els.ticketsList.appendChild(card);
   });
 }
