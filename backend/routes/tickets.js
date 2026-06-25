@@ -63,6 +63,17 @@ router.post('/', upload.single('media'), async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // If ticket is linked to a task, update task status to 'Ticket Raised'
+    if (task_id) {
+      try {
+        await supabase
+          .from('tasks')
+          .update({ status: 'Ticket Raised' })
+          .eq('id', task_id);
+      } catch (_) { /* non-critical — ticket is already saved */ }
+    }
+
     res.status(201).json(data);
   } catch (err) {
     console.error('Raise ticket error:', err.message);
