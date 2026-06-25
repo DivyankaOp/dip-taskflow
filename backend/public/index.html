@@ -456,8 +456,8 @@
         <section id="view-tickets" class="view" hidden>
           <div class="view-header-row">
             <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">Tickets</h2>
-              <p class="view-sub">Raise and track support issues.</p>
+              <h2 class="view-title" id="ticketsViewTitle">Tickets</h2>
+              <p class="view-sub" id="ticketsViewSub">Raise and track support issues.</p>
             </div>
             <button id="openRaiseTicket" class="primary-btn primary-btn-inline">+ Raise ticket</button>
           </div>
@@ -698,6 +698,22 @@
               </tbody>
             </table>
           </div>
+        </section>
+
+        <!-- DAILY REPORT -->
+        <section id="view-daily-report" class="view" hidden>
+          <div class="view-header-row" style="flex-wrap:wrap;gap:12px">
+            <div class="view-heading" style="margin-bottom:0">
+              <h2 class="view-title">📋 Daily Report</h2>
+              <p class="view-sub" id="drptSubtitle">Previous day's task status report</p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <input type="date" id="drptDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+              <button id="drptGenBtn" class="primary-btn primary-btn-inline">🔄 Generate</button>
+              <button id="drptDownloadBtn" class="ghost-btn" style="display:none">⬇️ Download PDF</button>
+            </div>
+          </div>
+          <div id="drptBody" style="margin-top:20px"></div>
         </section>
 
       </main>
