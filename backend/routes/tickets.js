@@ -2,7 +2,6 @@ const express = require('express');
 const multer  = require('multer');
 const supabase = require('../lib/supabaseClient');
 const { requireAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -101,7 +100,15 @@ router.get('/', async (req, res) => {
 });
 
 // ----------------------------- solve (admin or can_resolve_tickets) -----------------------------
-router.patch('/:id/solve', requirePermission('can_resolve_tickets'), async (req, res) => {
+router.patch('/:id/solve', async (req, res) => {
+  // Admins can always solve; other users need the can_resolve_tickets flag.
+  if (req.user.role !== 'admin') {
+    const { data: me, error: meErr } = await supabase
+      .from('users').select('can_resolve_tickets').eq('id', req.user.id).maybeSingle();
+    if (meErr || !me?.can_resolve_tickets) {
+      return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
+    }
+  }
   try {
     const { solution } = req.body || {};
     if (!solution || !solution.trim()) {
@@ -122,23 +129,6 @@ router.patch('/:id/solve', requirePermission('can_resolve_tickets'), async (req,
     res.json(data);
   } catch (err) {
     console.error('Solve ticket error:', err.message);
-    res.status(500).json({ error: 'Could not resolve ticket' });
-  }
-});
-
-// ----------------------------- quick resolve (legacy) -----------------------------
-router.patch('/:id/resolve', requirePermission('can_resolve_tickets'), async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('tickets')
-      .update({ status: 'Resolved' })
-      .eq('id', req.params.id)
-      .select(TICKET_SELECT)
-      .single();
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    console.error('Resolve ticket error:', err.message);
     res.status(500).json({ error: 'Could not resolve ticket' });
   }
 });
