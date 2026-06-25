@@ -352,8 +352,6 @@ async function enterApp() {
   } else {
     switchView('my');
   }
-  // Load sidebar badge counts after nav is built
-  setTimeout(refreshNavBadges, 500);
 }
 
 function buildNav() {
@@ -431,60 +429,6 @@ function makeNavButton(key, label) {
   btn.className = 'nav-btn'; btn.textContent = label; btn.dataset.view = key;
   btn.addEventListener('click', () => { switchView(key); closeSidebar(); });
   return btn;
-}
-
-// ─── Nav Badges ──────────────────────────────────────────────────────────────
-// Keeps track of badge counts so we can update the nav without rebuilding it.
-const navBadges = {};
-
-function setNavBadge(viewKey, count) {
-  navBadges[viewKey] = count;
-  const btn = document.querySelector(`.nav-btn[data-view="${viewKey}"]`);
-  if (!btn) return;
-  // Remove existing badge
-  const existing = btn.querySelector('.nav-badge');
-  if (existing) existing.remove();
-  if (count > 0) {
-    const badge = document.createElement('span');
-    badge.className = 'nav-badge';
-    badge.textContent = count > 99 ? '99+' : count;
-    btn.appendChild(badge);
-  }
-}
-
-// Fetch open ticket count + overdue/pending task count and apply badges.
-async function refreshNavBadges() {
-  try {
-    // Tickets badge — open tickets (admin/mis see all; others see only their own)
-    const tickets = await api('/tickets');
-    const openTickets = tickets.filter(t => t.status === 'Open');
-    setNavBadge('tickets-open', openTickets.length);
-  } catch (_) { /* silent */ }
-
-  // Tasks badges — only for admin (employee already sees their tasks in My Tasks)
-  if (state.user.role === 'admin') {
-    try {
-      const tasks = await api('/tasks/all');
-      const now = new Date();
-      const overdue = tasks.filter(t => {
-        if (!t.target_date) return false;
-        if (t.status === 'Completed' || t.status === 'Rejected') return false;
-        if (t.verification_status === 'Verified') return false;
-        return new Date(t.target_date) < now;
-      });
-      setNavBadge('overdue', overdue.length);
-
-      const pending = tasks.filter(t => t.status === 'Pending');
-      setNavBadge('all', pending.length || 0);
-    } catch (_) { /* silent */ }
-  } else {
-    // Employee: badge on "My Tasks" for pending tasks
-    try {
-      const myTasks = await api('/tasks/my');
-      const active = myTasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected');
-      setNavBadge('my', active.length);
-    } catch (_) { /* silent */ }
-  }
 }
 
 function switchView(viewKey) {
@@ -1112,12 +1056,6 @@ function buildCardMenuItems(task, { showAssignee }) {
         updateStatus(task.id, 'Rejected', reason);
       }});
     }
-  } else if (state.user.role === 'admin' && !isAdminManaging && task.status === 'In Progress' && !isPendingVerification) {
-    // Admin viewing their own tasks (My Tasks) — Mark complete goes in the menu, not as a primary button
-    items.push({ label: '✅ Mark complete', onClick: () => updateStatus(task.id, 'Completed') });
-    if (task.rescheduling_possible) {
-      items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
-    }
   } else if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
     items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
   }
@@ -1144,7 +1082,9 @@ function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
       updateStatus(task.id, 'Rejected', reason);
     }));
   }
-  // "Mark complete" for admin's own In Progress tasks is in the 3-dot menu, not here
+  if (task.status === 'In Progress' && state.user.role === 'admin') {
+    buttons.push(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
+  }
   if (task.status === 'Rejected') {
     buttons.push(makeActionBtn('action-start', 'Re-open', () => updateStatus(task.id, 'Pending')));
   }
@@ -1235,7 +1175,6 @@ async function updateStatus(taskId, status, status_note) {
   try {
     await api(`/tasks/${taskId}/status`, { method: 'PATCH', body: { status, status_note } });
     showToast('Task updated ✅', 'success'); reloadCurrentTaskView();
-    refreshNavBadges();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -1839,7 +1778,6 @@ document.getElementById('submitSolutionBtn').addEventListener('click', async () 
     showToast('Solution submitted & ticket resolved ✅', 'success');
     document.getElementById('solutionModal').hidden = true;
     loadTickets();
-    refreshNavBadges();
   } catch (err) {
     msgEl.textContent = err.message;
     msgEl.hidden = false;
