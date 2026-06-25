@@ -28,7 +28,7 @@ async function uploadFile(file, folder) {
 
 const TICKET_SELECT = `
   id, category, description, status, attachment_url, solution, solution_at, created_at,
-  task:tasks ( id, description ),
+  task:tasks ( id, description, project:projects ( id, name ) ),
   raised_by_user:users!tickets_raised_by_fkey ( id, full_name ),
   solved_by_user:users!tickets_solution_by_fkey ( id, full_name )
 `;
