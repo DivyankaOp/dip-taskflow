@@ -782,16 +782,55 @@
         <button class="modal-close" id="closeTicketModal">&times;</button>
       </div>
       <form id="ticketForm" class="modal-body">
+        <!-- Shown only when ticket is linked to a task -->
+        <div id="ticketTaskBanner" class="ticket-task-banner" hidden>
+          <span class="ticket-task-banner-icon">🔗</span>
+          <span>Linked to task: <strong id="ticketTaskBannerText"></strong></span>
+        </div>
         <div class="field">
-          <label for="ticket-description">What's the issue? <span class="req">*</span></label>
-          <textarea id="ticket-description" rows="4" placeholder="Describe the issue..." required></textarea>
+          <label for="ticket-category">Category <span class="req">*</span></label>
+          <select id="ticket-category" required>
+            <option value="">Select category</option>
+            <option value="Technical">🔧 Technical issue</option>
+            <option value="Task">📋 Task related</option>
+            <option value="HR">👤 HR / Leave</option>
+            <option value="Access">🔑 Access / Login</option>
+            <option value="Payment">💰 Payment / Salary</option>
+            <option value="Other">📌 Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ticket-description">Describe the issue <span class="req">*</span></label>
+          <textarea id="ticket-description" rows="4" placeholder="Explain your issue in detail..." required></textarea>
         </div>
         <p id="ticketFormMsg" class="form-error" hidden></p>
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelTicketModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Submit</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Submit ticket</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Solution Modal (admin → write solution for a ticket) -->
+  <div id="solutionModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>💡 Provide solution</h3>
+        <button class="modal-close" id="closeSolutionModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="solutionTicketInfo" class="solution-ticket-info"></div>
+        <div class="field" style="margin-top:14px">
+          <label for="solution-text">Solution / response <span class="req">*</span></label>
+          <textarea id="solution-text" rows="5" placeholder="Write the solution or action taken..."></textarea>
+        </div>
+        <p id="solutionFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelSolutionModal">Cancel</button>
+          <button type="button" class="primary-btn primary-btn-inline" id="submitSolutionBtn">Submit &amp; Resolve</button>
+        </div>
+      </div>
     </div>
   </div>
 
