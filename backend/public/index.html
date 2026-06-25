@@ -497,6 +497,15 @@
           </div>
           <div id="correctionsList" class="task-list view-mobile-only" style="margin-top:20px"></div>
         </section>
+        <!-- UPDATIONS -->
+        <section id="view-updations" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">📝 Updations</h2>
+            <p class="view-sub">Tasks where admin/verifier has requested changes — review the note and make updates.</p>
+          </div>
+          <div id="updationsList" class="task-list" style="margin-top:20px"></div>
+        </section>
+
         <!-- RECURRING TASKS -->
         <section id="view-recurring" class="view" hidden>
           <div class="view-header-row">
@@ -812,6 +821,28 @@
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelTicketModal">Cancel</button>
           <button type="submit" class="primary-btn primary-btn-inline">Submit ticket</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Updation Modal (verifier/admin → send updation note to employee) -->
+  <div id="updationModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📝 Request Updation</h3>
+        <button class="modal-close" id="closeUpdationModal">&times;</button>
+      </div>
+      <form id="updationForm" class="modal-body">
+        <p class="form-note" style="margin-bottom:12px">Describe what needs to be updated. The employee will see this note in their Updations section.</p>
+        <div class="field">
+          <label for="updation-note">Updation note <span class="req">*</span></label>
+          <textarea id="updation-note" rows="4" placeholder="e.g. Please update the floor plan measurements and recheck the material quantities…" required></textarea>
+        </div>
+        <p id="updationFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelUpdationModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">📤 Send Updation</button>
         </div>
       </form>
     </div>
