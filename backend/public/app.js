@@ -68,6 +68,9 @@ const els = {
 
   allTasksCards: document.getElementById('allTasksCards'),
 
+  overdueTasksList: document.getElementById('overdueTasksList'),
+  overdueTasksCards: document.getElementById('overdueTasksCards'),
+
   departmentsTableBody: document.getElementById('departmentsTableBody'),
   addDepartmentForm: document.getElementById('addDepartmentForm'),
   addDepartmentMsg: document.getElementById('addDepartmentMsg'),
@@ -342,7 +345,7 @@ function buildNav() {
   const canResolveTickets = isAdmin || !!state.user.can_resolve_tickets;
 
   const taskItems = isAdmin
-    ? [{ key:'add', label:'➕ Add new task' }, { key:'all', label:'📋 All delegated tasks' }, { key:'my', label:'✅ My tasks' }, { key:'recurring', label:'🔁 Recurring tasks' }]
+    ? [{ key:'add', label:'➕ Add new task' }, { key:'all', label:'📋 All delegated tasks' }, { key:'overdue', label:'⏰ Overdue tasks' }, { key:'my', label:'✅ My tasks' }, { key:'recurring', label:'🔁 Recurring tasks' }]
     : [{ key:'my', label:'✅ My tasks' }, { key:'recurring', label:'🔁 My recurring tasks' }];
 
   els.navList.innerHTML = '';
@@ -407,6 +410,7 @@ function switchView(viewKey) {
     b.classList.toggle('active', b.dataset.view === viewKey);
   });
   if (viewKey === 'all')           loadAllTasks();
+  if (viewKey === 'overdue')       loadOverdueTasks();
   if (viewKey === 'my')            loadMyTasks();
   if (viewKey === 'employees')     loadEmployees();
   if (viewKey === 'sites')         loadSites();
@@ -617,6 +621,94 @@ function renderAllTasksTable(tbody, tasks) {
     tdActions.appendChild(buildCardMenuElement(task, { showAssignee: true }));
 
     tr.append(tdSr, tdDetails, tdDate, tdAssigned, tdVoice, tdAttach, tdPriority, tdStatus, tdActions);
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── Overdue Tasks (admin) ───────────────────────────────────────────────────
+// Reuses the same /tasks/all data as "All delegated tasks" — a task counts
+// as overdue when its target_date has passed and it hasn't actually
+// finished yet (still Pending/In Progress, or sitting in verification).
+async function loadOverdueTasks() {
+  els.overdueTasksList.innerHTML = `<tr><td colspan="8" class="empty-state">Loading overdue tasks…</td></tr>`;
+  els.overdueTasksCards.innerHTML = `<div class="empty-state">Loading overdue tasks…</div>`;
+  try {
+    const tasks = await api('/tasks/all');
+    const now = new Date();
+    const overdue = tasks.filter((t) => {
+      if (!t.target_date) return false;
+      if (t.status === 'Completed' || t.status === 'Rejected') return false;
+      if (t.verification_status === 'Verified') return false;
+      return new Date(t.target_date) < now;
+    }).sort((a, b) => new Date(a.target_date) - new Date(b.target_date));
+
+    renderOverdueTasksTable(els.overdueTasksList, overdue);
+    renderTaskList(els.overdueTasksCards, overdue, { showAssignee: true, allowActions: true });
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// renders the admin "Overdue tasks" as a table (desktop) — same as All Tasks
+// but adds a Verifier column, since knowing who (if anyone) is sitting on a
+// verification is exactly the point of this view.
+function renderOverdueTasksTable(tbody, tasks) {
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const tr = document.createElement('tr');
+    const statusClass = task.status.replace(/\s/g, '');
+
+    // Sr No
+    const tdSr = document.createElement('td');
+    tdSr.innerHTML = `<span class="sr-number">${index + 1}</span>`;
+
+    // Task details
+    const tdDetails = document.createElement('td');
+    tdDetails.className = 'task-name-cell';
+    tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: true });
+
+    // Planned date (how overdue, shown in red)
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
+    tdDate.innerHTML = `
+      <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
+      <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue <= 0 ? 'Overdue today' : `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`}</div>
+    `;
+
+    // Assigned to
+    const tdAssigned = document.createElement('td');
+    tdAssigned.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
+
+    // Verifier — who the task is (or was) sent to for verification, if any
+    const tdVerifier = document.createElement('td');
+    tdVerifier.innerHTML = task.verifier?.full_name
+      ? `<strong style="font-weight:600">${escapeHtml(task.verifier.full_name)}</strong>`
+      : `<span class="media-none">—</span>`;
+
+    // Priority
+    const tdPriority = document.createElement('td');
+    tdPriority.innerHTML = `<span class="pill pill-${task.priority}">${task.priority}</span>`;
+
+    // Status (with verification badge if applicable)
+    const tdStatus = document.createElement('td');
+    let statusHtml = `<span class="pill pill-${statusClass}">${task.status}</span>`;
+    if (task.verification_status === 'Pending Verification') {
+      statusHtml += `<br><span class="pill pill-PendingVerification" style="margin-top:4px">⏳ Verifying</span>`;
+    } else if (task.verification_status === 'Verification Rejected') {
+      statusHtml += `<br><span class="pill pill-Rejected" style="margin-top:4px">↩ Rej.</span>`;
+    }
+    tdStatus.innerHTML = statusHtml;
+
+    // Actions
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    buildPrimaryStatusButtons(task, { showAssignee: true, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
+    tdActions.appendChild(buildCardMenuElement(task, { showAssignee: true }));
+
+    tr.append(tdSr, tdDetails, tdDate, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
     tbody.appendChild(tr);
   });
 }
@@ -2280,9 +2372,12 @@ async function loadEmployeeRecurringTasks() {
 }
 
 // Desktop table view — same data as the card list above, laid out as rows.
-function renderEmployeeRecurringTable(tasks) {
+function renderEmployeeRecurringTable(allTasks) {
   const tbody = document.getElementById('employeeRecurringTableBody');
   if (!tbody) return;
+  // A task completed today drops off the table immediately — same rule as
+  // the card view — and comes back automatically on its next due date.
+  const tasks = allTasks.filter(t => !(t.fires_today && t.today_instance?.status === 'Completed'));
   if (!tasks.length) {
     tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No recurring tasks assigned to you</td></tr>`;
     return;
@@ -2432,14 +2527,13 @@ function renderEmployeeRecurringList(tasks) {
   }
   wrap.innerHTML = '';
 
-  // Today's tasks split into "still to do" vs "already completed today" —
-  // a completed task drops out of the active list so the employee isn't
-  // staring at a checklist they already finished. It'll reappear here
+  // Today's tasks, minus anything already completed today — a completed
+  // task drops out of the list immediately (no "Completed today" section)
+  // so the employee only ever sees what's left to do. It'll reappear here
   // automatically on its next due date once the backend creates a fresh
   // instance for that date.
   const dueToday = tasks.filter(t => t.fires_today);
   const activeToday = dueToday.filter(t => t.today_instance?.status !== 'Completed');
-  const completedToday = dueToday.filter(t => t.today_instance?.status === 'Completed');
   const notToday = tasks.filter(t => !t.fires_today);
 
   if (activeToday.length) {
@@ -2447,15 +2541,7 @@ function renderEmployeeRecurringList(tasks) {
     hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
     wrap.appendChild(hdr);
     activeToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
-  }
-  if (completedToday.length) {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
-    hdr.textContent = '✅ Completed today';
-    wrap.appendChild(hdr);
-    completedToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
-  }
-  if (!activeToday.length && !completedToday.length) {
+  } else {
     const hdr = document.createElement('div');
     hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
     wrap.appendChild(hdr);
