@@ -7,17 +7,21 @@ const router = express.Router();
 router.use(requireAuth);
 
 const TICKET_SELECT = `
-  id, description, status, created_at,
+  id, category, description, status, solution, solution_at, created_at,
   task:tasks ( id, description ),
-  raised_by_user:users!tickets_raised_by_fkey ( id, full_name )
+  raised_by_user:users!tickets_raised_by_fkey ( id, full_name ),
+  solved_by_user:users!tickets_solution_by_fkey ( id, full_name )
 `;
 
 // ----------------------------- raise a ticket (anyone logged in) -----------------------------
 router.post('/', async (req, res) => {
   try {
-    const { task_id, description } = req.body || {};
+    const { task_id, category, description } = req.body || {};
     if (!description || !description.trim()) {
       return res.status(400).json({ error: 'Please describe the issue' });
+    }
+    if (!category || !category.trim()) {
+      return res.status(400).json({ error: 'Please select a category' });
     }
 
     const { data, error } = await supabase
@@ -25,6 +29,7 @@ router.post('/', async (req, res) => {
       .insert({
         task_id: task_id || null,
         raised_by: req.user.id,
+        category: category.trim(),
         description: description.trim(),
         status: 'Open'
       })
@@ -64,7 +69,36 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ----------------------------- resolve a ticket (admin, or anyone with can_resolve_tickets) -----------------------------
+// ----------------------------- solve a ticket (admin, or anyone with can_resolve_tickets) -----------------------------
+// Writes the solution text, sets status to Resolved, records who solved it.
+router.patch('/:id/solve', requirePermission('can_resolve_tickets'), async (req, res) => {
+  try {
+    const { solution } = req.body || {};
+    if (!solution || !solution.trim()) {
+      return res.status(400).json({ error: 'Please provide a solution' });
+    }
+
+    const { data, error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'Resolved',
+        solution: solution.trim(),
+        solution_by: req.user.id,
+        solution_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .select(TICKET_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Solve ticket error:', err.message);
+    res.status(500).json({ error: 'Could not resolve ticket' });
+  }
+});
+
+// ----------------------------- resolve a ticket without solution (legacy / quick) -----------------------------
 router.patch('/:id/resolve', requirePermission('can_resolve_tickets'), async (req, res) => {
   try {
     const { data, error } = await supabase
