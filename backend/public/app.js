@@ -71,6 +71,22 @@ const els = {
   overdueTasksList: document.getElementById('overdueTasksList'),
   overdueTasksCards: document.getElementById('overdueTasksCards'),
 
+  overdueExtendModal: document.getElementById('overdueExtendModal'),
+  overdueExtendForm: document.getElementById('overdueExtendForm'),
+  overdueExtendDate: document.getElementById('overdue-extend-date'),
+  overdueExtendReason: document.getElementById('overdue-extend-reason'),
+  overdueExtendFormMsg: document.getElementById('overdueExtendFormMsg'),
+  closeOverdueExtendModal: document.getElementById('closeOverdueExtendModal'),
+  cancelOverdueExtendModal: document.getElementById('cancelOverdueExtendModal'),
+
+  overdueDrawerBackdrop: document.getElementById('overdueDrawerBackdrop'),
+  closeOverdueDrawer: document.getElementById('closeOverdueDrawer'),
+  overdueTabToday: document.getElementById('overdueTabToday'),
+  overdueTabPending: document.getElementById('overdueTabPending'),
+  overdueTabTodayCount: document.getElementById('overdueTabTodayCount'),
+  overdueTabPendingCount: document.getElementById('overdueTabPendingCount'),
+  overdueDrawerBody: document.getElementById('overdueDrawerBody'),
+
   departmentsTableBody: document.getElementById('departmentsTableBody'),
   addDepartmentForm: document.getElementById('addDepartmentForm'),
   addDepartmentMsg: document.getElementById('addDepartmentMsg'),
@@ -626,11 +642,29 @@ function renderAllTasksTable(tbody, tasks) {
 }
 
 // ─── Overdue Tasks (admin) ───────────────────────────────────────────────────
-// Reuses the same /tasks/all data as "All delegated tasks" — a task counts
-// as overdue when its target_date has passed and it hasn't actually
-// finished yet (still Pending/In Progress, or sitting in verification).
+// Reuses the same /tasks/all data as "All delegated tasks". A task counts as
+// overdue when its target_date has passed and it hasn't actually finished
+// (Rejected tasks never show here at all). Within that set:
+//   - "source" tells you whether it's overdue because it's still sitting
+//     unfinished from assignment, or because it's stuck waiting on a verifier.
+//   - if an admin has set an overdue_extended_until that's still in the
+//     future, the task moves to the "Pending" tab inside the drawer (it's
+//     still overdue against the real target_date, but someone already
+//     acknowledged it and gave the employee more time). Once that extended
+//     time itself passes, it falls back into "Today" — needs attention again.
+let overdueTasksCache = [];
+let overdueDrawerTab = 'today';
+
+function taskOverdueSource(task) {
+  return task.verification_status === 'Pending Verification' ? 'verification' : 'assignment';
+}
+
+function isOverdueExtensionActive(task) {
+  return !!task.overdue_extended_until && new Date(task.overdue_extended_until) > new Date();
+}
+
 async function loadOverdueTasks() {
-  els.overdueTasksList.innerHTML = `<tr><td colspan="8" class="empty-state">Loading overdue tasks…</td></tr>`;
+  els.overdueTasksList.innerHTML = `<tr><td colspan="9" class="empty-state">Loading overdue tasks…</td></tr>`;
   els.overdueTasksCards.innerHTML = `<div class="empty-state">Loading overdue tasks…</div>`;
   try {
     const tasks = await api('/tasks/all');
@@ -642,23 +676,26 @@ async function loadOverdueTasks() {
       return new Date(t.target_date) < now;
     }).sort((a, b) => new Date(a.target_date) - new Date(b.target_date));
 
+    overdueTasksCache = overdue;
     renderOverdueTasksTable(els.overdueTasksList, overdue);
     renderTaskList(els.overdueTasksCards, overdue, { showAssignee: true, allowActions: true });
   } catch (err) { showToast(err.message, 'error'); }
 }
 
-// renders the admin "Overdue tasks" as a table (desktop) — same as All Tasks
-// but adds a Verifier column, since knowing who (if anyone) is sitting on a
-// verification is exactly the point of this view.
+// renders the admin "Overdue tasks" as a table (desktop) — adds a Verifier
+// column and a Source badge, and clicking a row opens the Today/Pending
+// detail drawer for that task.
 function renderOverdueTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
   tasks.forEach((task, index) => {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
     const statusClass = task.status.replace(/\s/g, '');
+    const source = taskOverdueSource(task);
 
     // Sr No
     const tdSr = document.createElement('td');
@@ -669,13 +706,20 @@ function renderOverdueTasksTable(tbody, tasks) {
     tdDetails.className = 'task-name-cell';
     tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: true });
 
-    // Planned date (how overdue, shown in red)
+    // Source — why is this overdue: stuck before submission, or stuck in verification?
+    const tdSource = document.createElement('td');
+    tdSource.innerHTML = source === 'verification'
+      ? `<span class="source-badge source-verification">⏳ Verification</span>`
+      : `<span class="source-badge source-assignment">📋 Assignment</span>`;
+
+    // Planned date (how overdue, shown in red) + extension note if active
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
     tdDate.innerHTML = `
       <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
       <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue <= 0 ? 'Overdue today' : `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue`}</div>
+      ${isOverdueExtensionActive(task) ? `<div style="color:var(--emerald);font-size:0.75rem;margin-top:2px">⏱ Extended to ${fmtDate(task.overdue_extended_until)}</div>` : ''}
     `;
 
     // Assigned to
@@ -702,14 +746,137 @@ function renderOverdueTasksTable(tbody, tasks) {
     }
     tdStatus.innerHTML = statusHtml;
 
-    // Actions
+    // Actions — overdue view only offers "Mark as done" + "Set extended time"
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
-    buildPrimaryStatusButtons(task, { showAssignee: true, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
-    tdActions.appendChild(buildCardMenuElement(task, { showAssignee: true }));
+    tdActions.addEventListener('click', (e) => e.stopPropagation()); // don't open drawer when using the menu
+    tdActions.appendChild(buildOverdueMenuElement(task));
 
-    tr.append(tdSr, tdDetails, tdDate, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
+    tr.append(tdSr, tdDetails, tdSource, tdDate, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
+    tr.addEventListener('click', () => openOverdueDrawer(task.id));
     tbody.appendChild(tr);
+  });
+}
+
+// Dedicated 3-dot menu for the Overdue view — intentionally just these two
+// actions (not the full reschedule/reassign/reject menu used elsewhere),
+// since "deal with it from here" in this view means either finish it or
+// buy it more time.
+function buildOverdueMenuElement(task) {
+  const wrap = document.createElement('div'); wrap.className = 'card-menu';
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button'; menuBtn.className = 'card-menu-btn';
+  menuBtn.setAttribute('aria-label', 'More options'); menuBtn.textContent = '⋮';
+  const menuList = document.createElement('div');
+  menuList.className = 'card-menu-list'; menuList.hidden = true;
+
+  const items = [];
+  if (task.status !== 'Completed') {
+    items.push({ label: '✅ Mark as done', onClick: () => updateStatus(task.id, 'Completed') });
+  }
+  items.push({ label: '⏱ Set extended time', onClick: () => openOverdueExtendModal(task) });
+
+  items.forEach((item) => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'card-menu-item'; btn.textContent = item.label;
+    btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
+    menuList.appendChild(btn);
+  });
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
+    menuList.hidden = !menuList.hidden;
+  });
+  wrap.appendChild(menuBtn); wrap.appendChild(menuList);
+  return wrap;
+}
+
+// ─── Set extended time modal ──────────────────────────────────────────────
+function openOverdueExtendModal(task) {
+  state.pendingTaskId = task.id;
+  els.overdueExtendFormMsg.hidden = true;
+  els.overdueExtendDate.value = task.overdue_extended_until ? toDatetimeLocalValue(task.overdue_extended_until) : '';
+  els.overdueExtendReason.value = task.overdue_extension_reason ?? '';
+  els.overdueExtendModal.hidden = false;
+}
+els.closeOverdueExtendModal.addEventListener('click', () => { els.overdueExtendModal.hidden = true; });
+els.cancelOverdueExtendModal.addEventListener('click', () => { els.overdueExtendModal.hidden = true; });
+els.overdueExtendForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.overdueExtendFormMsg.hidden = true;
+  try {
+    await api(`/tasks/${state.pendingTaskId}/overdue-extend`, {
+      method: 'PATCH',
+      body: { extended_until: els.overdueExtendDate.value, reason: els.overdueExtendReason.value }
+    });
+    showToast('Extended time saved ⏱', 'success');
+    els.overdueExtendModal.hidden = true;
+    if (state.activeView === 'overdue') loadOverdueTasks();
+  } catch (err) { els.overdueExtendFormMsg.textContent = err.message; els.overdueExtendFormMsg.hidden = false; }
+});
+
+// ─── Overdue detail drawer (Today / Pending tabs) ─────────────────────────
+// "Today" = needs attention right now (no active extension, or the
+// extension itself has already lapsed). "Pending" = an admin already gave
+// the employee more time and that window hasn't passed yet.
+function openOverdueDrawer(taskId) {
+  const task = overdueTasksCache.find((t) => t.id === taskId);
+  if (!task) return;
+  overdueDrawerTab = isOverdueExtensionActive(task) ? 'pending' : 'today';
+  renderOverdueDrawer();
+  els.overdueDrawerBackdrop.hidden = false;
+}
+els.closeOverdueDrawer.addEventListener('click', () => { els.overdueDrawerBackdrop.hidden = true; });
+els.overdueDrawerBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.overdueDrawerBackdrop) els.overdueDrawerBackdrop.hidden = true;
+});
+els.overdueTabToday.addEventListener('click', () => { overdueDrawerTab = 'today'; renderOverdueDrawer(); });
+els.overdueTabPending.addEventListener('click', () => { overdueDrawerTab = 'pending'; renderOverdueDrawer(); });
+
+function renderOverdueDrawer() {
+  const today = overdueTasksCache.filter((t) => !isOverdueExtensionActive(t));
+  const pending = overdueTasksCache.filter((t) => isOverdueExtensionActive(t));
+
+  els.overdueTabTodayCount.textContent = today.length;
+  els.overdueTabPendingCount.textContent = pending.length;
+  els.overdueTabToday.classList.toggle('active', overdueDrawerTab === 'today');
+  els.overdueTabPending.classList.toggle('active', overdueDrawerTab === 'pending');
+
+  const list = overdueDrawerTab === 'today' ? today : pending;
+  const body = els.overdueDrawerBody;
+
+  if (!list.length) {
+    body.innerHTML = `<div class="empty-state">${overdueDrawerTab === 'today' ? 'Nothing needs attention right now 🎉' : 'No tasks on extended time'}</div>`;
+    return;
+  }
+
+  body.innerHTML = '';
+  list.forEach((task) => {
+    const source = taskOverdueSource(task);
+    const item = document.createElement('div');
+    item.className = 'drawer-task-item';
+    item.innerHTML = `
+      ${source === 'verification'
+        ? `<span class="source-badge source-verification">⏳ Verification</span>`
+        : `<span class="source-badge source-assignment">📋 Assignment</span>`}
+      <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+      <div class="task-detail-line"><span class="task-detail-label">Assigned to:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>
+      ${task.verifier?.full_name ? `<div class="task-detail-line"><span class="task-detail-label">Verifier:</span> ${escapeHtml(task.verifier.full_name)}</div>` : ''}
+      <div class="task-detail-line"><span class="task-detail-label">Planned date:</span> ${escapeHtml(fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete))}</div>
+      ${overdueDrawerTab === 'pending' ? `
+        <div class="drawer-extension-note">
+          ⏱ Extended to <strong>${escapeHtml(fmtDate(task.overdue_extended_until))}</strong>
+          ${task.overdue_extension_reason ? `<br>Reason: ${escapeHtml(task.overdue_extension_reason)}` : ''}
+        </div>
+      ` : ''}
+      <div class="drawer-task-actions"></div>
+    `;
+    const actionsEl = item.querySelector('.drawer-task-actions');
+    if (task.status !== 'Completed') {
+      actionsEl.appendChild(makeActionBtn('action-complete', '✅ Mark as done', () => updateStatus(task.id, 'Completed')));
+    }
+    actionsEl.appendChild(makeActionBtn('action-start', '⏱ Set extended time', () => openOverdueExtendModal(task)));
+    body.appendChild(item);
   });
 }
 
@@ -975,6 +1142,7 @@ async function updateStatus(taskId, status, status_note) {
 function reloadCurrentTaskView() {
   if (state.activeView === 'all')           loadAllTasks();
   else if (state.activeView === 'my')       loadMyTasks();
+  else if (state.activeView === 'overdue')  loadOverdueTasks();
   else if (state.activeView === 'verifications') loadVerifications();
 }
 
