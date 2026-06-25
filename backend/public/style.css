@@ -1,1197 +1,1133 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-<title>DIP Projects — Task Manager</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2" />
-</head>
-<body>
+:root {
+  --ink:          #0F1117;
+  --ink-soft:     #374151;
+  --muted:        #6B7280;
+  --muted-lt:     #9CA3AF;
+  --bg:           #F0F2F8;
+  --surface:      #FFFFFF;
+  --surface-2:    #F8F9FC;
+  --border:       #E2E5F0;
+  --border-soft:  #ECEEF8;
 
-  <!-- LOGIN -->
-  <section id="loginScreen" class="screen login-screen">
-    <div class="login-card">
-      <div class="brand">
-        <img src="https://drive.google.com/thumbnail?id=10FeV3emPMe-VCvGni66b2DOzNIPM3mGp&sz=w120" 
-             alt="Company Logo" class="brand-logo"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
-        <span class="brand-mark" style="display:none">DP</span>
-        <div>
-          <h1>DIP Projects</h1>
-          <p class="brand-tag">Quality + Quantity · On Time Every Time</p>
-        </div>
-      </div>
-      <form id="loginForm" autocomplete="off">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" placeholder="Enter your username" required />
-        <label for="password">Password</label>
-        <div class="password-field">
-          <input id="password" name="password" type="password" placeholder="Enter your password" required />
-          <button type="button" id="togglePassword" class="ghost-btn" aria-label="Show password">👁</button>
-        </div>
-        <p id="loginError" class="form-error" hidden></p>
-        <button type="submit" class="primary-btn" id="loginBtn">Log in</button>
-      </form>
-      <p class="hint">First time here? Ask your admin for a username and password.</p>
-    </div>
-  </section>
+  --primary:      #DC6900;
+  --primary-dk:   #561501;
+  --primary-lt:   #FDF0E4;
+  --primary-mid:  #F2C49A;
 
-  <!-- APP SHELL -->
-  <section id="appScreen" class="screen app-screen" hidden>
-    <header class="topbar">
-      <button id="menuToggle" class="icon-btn" aria-label="Toggle menu">☰</button>
-      <div class="topbar-brand">
-        <img src="https://drive.google.com/thumbnail?id=10FeV3emPMe-VCvGni66b2DOzNIPM3mGp&sz=w40"
-             alt="Logo" class="topbar-logo"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
-        <span class="topbar-mark" style="display:none">DP</span>
-        <span class="topbar-name">DIP Projects</span>
-      </div>
-      <div class="topbar-user">
-        <div class="topbar-user-info">
-          <div class="topbar-user-namerow">
-            <strong id="userName">—</strong>
-            <span id="userRoleTag" class="role-tag">—</span>
-          </div>
-          <span class="topbar-tagline">Quality + Quantity to be delivered on time every time</span>
-        </div>
-        <button id="logoutBtn" class="logout-btn">↩ Log out</button>
-      </div>
-    </header>
+  --amber:        #D97706;
+  --amber-lt:     #FFFBEB;
+  --amber-bd:     #FDE68A;
+  --rose:         #DC2626;
+  --rose-lt:      #FFF1F4;
+  --rose-bd:      #FECDD3;
+  --emerald:      #059669;
+  --emerald-lt:   #ECFDF5;
+  --emerald-bd:   #6EE7B7;
+  --blue:         #2563EB;
+  --blue-lt:      #EFF6FF;
+  --blue-bd:      #BFDBFE;
+  --slate:        #94A3B8;
+  --correction:   #D97706;
+  --correction-lt:#FEF3C7;
 
-    <div class="app-body">
-      <aside id="sidebar" class="sidebar">
-        <nav id="navList" class="nav-list"></nav>
-      </aside>
-      <div id="sidebarOverlay" class="sidebar-overlay" hidden></div>
+  --font-display: 'Sora', sans-serif;
+  --font-body:    'Inter', sans-serif;
+  --font-mono:    'Courier New', monospace;
 
-      <main id="mainContent" class="main-content">
+  --r-sm:  6px;
+  --r-md:  10px;
+  --r-lg:  14px;
+  --r-xl:  18px;
 
-        <!-- ADD TASK -->
-        <section id="view-add" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">Assign a new task</h2>
-            <p class="view-sub">Fill in the details below to delegate a task to a team member.</p>
-          </div>
-          <form id="addTaskForm" class="task-form">
-            <div class="field-grid">
-              <div class="field">
-                <label for="f-department">Department <span class="req">*</span></label>
-                <select id="f-department" required><option value="">Select department</option></select>
-              </div>
-              <div class="field">
-                <label for="f-employee">Assign to <span class="req">*</span></label>
-                <select id="f-employee" required><option value="">Select employee</option></select>
-              </div>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label for="f-project">Project <span class="req">*</span></label>
-                <select id="f-project" required><option value="">Select project</option></select>
-              </div>
-              <div class="field">
-                <label for="f-tasktype">Task type <span class="req">*</span></label>
-                <select id="f-tasktype" required><option value="">Select task type</option></select>
-              </div>
-            </div>
-            <div class="field">
-              <label for="f-description">Task description <span class="req">*</span></label>
-              <textarea id="f-description" rows="3" placeholder="Describe the task in detail..." required></textarea>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label for="f-hours">Hours to complete</label>
-                <input id="f-hours" type="number" min="0" step="0.5" value="8" />
-              </div>
-              <div class="field">
-                <label for="f-targetdate">Target date <span class="req">*</span></label>
-                <input id="f-targetdate" type="datetime-local" required />
-              </div>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label for="f-priority">Priority</label>
-                <select id="f-priority">
-                  <option value="Low">Low</option>
-                  <option value="Medium" selected>Medium</option>
-                  <option value="High">High</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="f-reschedule">Rescheduling possible</label>
-                <select id="f-reschedule">
-                  <option value="false" selected>No</option>
-                  <option value="true">Yes</option>
-                </select>
-              </div>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label for="f-attachment">Attachment <span class="optional">(optional)</span></label>
-                <input id="f-attachment" type="file" />
-              </div>
-              <div class="field">
-                <label for="f-voicenote">Voice note <span class="optional">(optional)</span></label>
-                <input id="f-voicenote" type="file" accept="audio/*" />
-              </div>
-            </div>
-            <p id="addTaskMsg" class="form-error" hidden></p>
-            <div class="form-footer">
-              <button type="submit" class="primary-btn">Assign task</button>
-            </div>
-          </form>
-        </section>
+  --sh-xs: 0 1px 2px rgba(15,17,35,.05);
+  --sh-sm: 0 1px 4px rgba(15,17,35,.07), 0 1px 2px rgba(15,17,35,.04);
+  --sh-md: 0 4px 16px rgba(15,17,35,.08), 0 2px 4px rgba(15,17,35,.04);
+  --sh-lg: 0 20px 50px -16px rgba(220,105,0,.18), 0 8px 20px rgba(15,17,35,.06);
+  --sh-modal: 0 32px 72px -20px rgba(15,17,35,.32);
 
-        <!-- ALL DELEGATED TASKS -->
-        <section id="view-all" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">All delegated tasks</h2>
-            <p class="view-sub">Overview of every task assigned across the team.</p>
-          </div>
+  --sidebar-w: 230px;
+  --topbar-h:  58px;
+}
 
-          <div class="filter-panel">
-            <div class="filter-row">
-              <div class="filter-field">
-                <label class="filter-label">Department</label>
-                <select id="filter-department"><option value="">All departments</option></select>
-              </div>
-              <div class="filter-field">
-                <label class="filter-label">Employee</label>
-                <select id="filter-employee"><option value="">All employees</option></select>
-              </div>
-              <div class="filter-field">
-                <label class="filter-label">Status</label>
-                <select id="filter-status">
-                  <option value="">All statuses</option>
-                  <option value="Pending">Pending</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </div>
-              <div class="filter-field">
-                <label class="filter-label">From date</label>
-                <input type="date" id="filter-created-from" />
-              </div>
-              <div class="filter-field">
-                <label class="filter-label">To date</label>
-                <input type="date" id="filter-created-to" />
-              </div>
-              <button id="clearAllFilters" class="clear-btn">✕ Clear</button>
-            </div>
-            <p id="dateRangeCount" hidden class="range-count"></p>
-          </div>
+*  { box-sizing: border-box; margin: 0; padding: 0; }
 
-          <div class="table-card view-desktop-only">
-            <div class="table-scroll">
-              <table class="data-table" id="allTasksTable">
-                <thead>
-                  <tr>
-                    <th class="col-sr">Sr No</th>
-                    <th class="col-details">Task details</th>
-                    <th class="col-date">Planned date</th>
-                    <th class="col-assigned">Assigned to</th>
-                    <th class="col-voice">Voice note</th>
-                    <th class="col-attach">Attachment</th>
-                    <th class="col-priority">Priority</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="allTasksList"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="allTasksCards" class="task-list view-mobile-only"></div>
-        </section>
+/* Global safety net: the [hidden] attribute must always win over any
+   component's own `display` rule, regardless of class. Without this,
+   any element with both a class setting `display` (e.g. flex/inline-flex/
+   grid) and the `hidden` attribute can end up visible, because an author
+   class rule beats the browser's built-in [hidden] rule at equal
+   specificity. This was the cause of the "+ Add recurring task" button
+   staying visible to employees even when JS correctly set hidden = true. */
+[hidden] { display: none !important; }
 
-        <!-- OVERDUE TASKS -->
-        <section id="view-overdue" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">Overdue tasks</h2>
-            <p class="view-sub">Tasks whose target date has passed and are still not completed/verified — includes who's currently verifying, if anyone.</p>
-          </div>
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+h1,h2,h3,h4 { font-family: var(--font-display); line-height: 1.25; }
+input,select,textarea,button { font-family: var(--font-body); font-size: 0.875rem; }
+.screen { min-height: 100vh; }
+.screen[hidden] { display: none; }
 
-          <div class="table-card view-desktop-only">
-            <div class="table-scroll">
-              <table class="data-table" id="overdueTasksTable">
-                <thead>
-                  <tr>
-                    <th class="col-sr">Sr No</th>
-                    <th class="col-details">Task details</th>
-                    <th class="col-status">Source</th>
-                    <th class="col-date">Planned date</th>
-                    <th class="col-assigned">Assigned to</th>
-                    <th class="col-assigned">Verifier</th>
-                    <th class="col-priority">Priority</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="overdueTasksList"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="overdueTasksCards" class="task-list view-mobile-only"></div>
-        </section>
+/* ================================================================
+   LOGIN
+   ================================================================ */
+.login-screen {
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; min-height: 100vh;
+  background:
+    radial-gradient(ellipse 65% 55% at 15% -5%, #F6E2C8 0%, transparent 58%),
+    radial-gradient(ellipse 45% 40% at 85% 108%, #EBD2B5 0%, transparent 52%),
+    var(--bg);
+}
+.login-card {
+  width: 100%; max-width: 400px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl); padding: 38px 34px;
+  box-shadow: var(--sh-lg);
+}
+.brand { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+.brand-logo {
+  width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
+  object-fit: contain;
+  box-shadow: 0 6px 18px -4px rgba(220,105,0,.35);
+}
+.brand-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
+  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
+  box-shadow: 0 6px 18px -4px rgba(220,105,0,.5);
+}
+.brand h1 { font-size: 1.35rem; color: var(--ink); font-weight: 800; }
+.brand-tag { color: var(--primary-dk); font-size: 0.76rem; margin-top: 3px; font-weight: 600; font-style: italic; }
+
+#loginForm label {
+  display: block; font-size: 0.76rem; font-weight: 700;
+  margin: 18px 0 6px; color: var(--ink-soft); letter-spacing: .03em; text-transform: uppercase;
+}
+#loginForm input {
+  width: 100%; padding: 11px 14px; border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface-2); outline: none;
+  color: var(--ink); transition: border-color .15s, box-shadow .15s;
+}
+#loginForm input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(220,105,0,.12); }
+
+.password-field { position: relative; display: flex; }
+.password-field input { flex: 1; padding-right: 44px; }
+.password-field .ghost-btn {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 1rem;
+  padding: 8px; border-radius: 6px; color: var(--muted);
+}
+.hint { margin: 22px 0 0; text-align: center; font-size: 0.76rem; color: var(--muted-lt); }
+
+/* ================================================================
+   BUTTONS
+   ================================================================ */
+.primary-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 100%; margin-top: 22px; padding: 13px 20px;
+  border: none; border-radius: var(--r-sm);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
+  color: #fff; font-weight: 700; font-size: 0.88rem; cursor: pointer;
+  letter-spacing: .01em;
+  box-shadow: 0 4px 14px -4px rgba(220,105,0,.55);
+  transition: transform .12s, box-shadow .15s;
+}
+.primary-btn[hidden] { display: none !important; }
+.primary-btn:hover { box-shadow: 0 8px 22px -6px rgba(220,105,0,.7); transform: translateY(-1px); }
+.primary-btn:active { transform: scale(.98); box-shadow: none; }
+.primary-btn-inline { width: auto; margin-top: 0; padding: 9px 18px; font-size: 0.83rem; }
+
+.ghost-btn { background: none; border: none; cursor: pointer; padding: 6px; }
+.ghost-btn-text {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 14px;
+  font-size: 0.83rem; cursor: pointer; color: var(--muted);
+  transition: border-color .15s, color .15s;
+}
+.ghost-btn-text:hover { border-color: var(--primary); color: var(--primary); }
 
 
-        <!-- MY TASKS -->
-        <section id="view-my" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">My tasks</h2>
-            <p class="view-sub">Your active and pending tasks are listed here.</p>
-          </div>
+.clear-btn {
+  background: none; border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 14px;
+  font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  color: var(--muted); transition: all .15s; white-space: nowrap; align-self: flex-end;
+}
+.clear-btn:hover { border-color: var(--rose); color: var(--rose); background: var(--rose-lt); }
 
-          <div class="table-card view-desktop-only">
-            <div class="table-scroll">
-              <table class="data-table" id="myTasksTable">
-                <thead>
-                  <tr>
-                    <th class="col-sr">Sr No</th>
-                    <th class="col-details">Task details</th>
-                    <th class="col-date">Due date</th>
-                    <th class="col-voice">Voice note</th>
-                    <th class="col-attach">Attachment</th>
-                    <th class="col-priority">Priority</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="myTasksTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="myTasksList" class="task-list view-mobile-only"></div>
-        </section>
+/* ================================================================
+   TOPBAR
+   ================================================================ */
+.topbar {
+  position: sticky; top: 0; z-index: 20; height: var(--topbar-h);
+  display: flex; align-items: center; gap: 14px; padding: 0 20px;
+  background: linear-gradient(135deg, #561501 0%, #B85A00 60%, #DC6900 100%);
+  border-bottom: none;
+  box-shadow: 0 2px 16px rgba(220,105,0,.4);
+}
+.icon-btn {
+  background: none; border: none; font-size: 1.2rem; cursor: pointer;
+  padding: 7px; border-radius: 8px; color: rgba(255,255,255,.85);
+  transition: background .15s;
+}
+.icon-btn:hover { background: rgba(255,255,255,.15); }
 
-        <!-- MANAGE EMPLOYEES -->
-        <section id="view-employees" class="view" hidden>
-          <div class="view-header-row">
-            <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">Manage employees</h2>
-              <p class="view-sub">Add, activate, or deactivate team members.</p>
-            </div>
-            <button id="openAddEmployee" class="primary-btn primary-btn-inline">+ Add employee</button>
-          </div>
+.topbar-brand { display: flex; align-items: center; gap: 10px; }
+.topbar-logo {
+  width: 42px; height: 42px; border-radius: 8px; object-fit: contain;
+  background: rgba(255,255,255,.15); padding: 3px; flex-shrink: 0;
+}
+.topbar-mark {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(255,255,255,.2);
+  color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 0.9rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.topbar-name {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
 
-          <div class="table-card view-desktop-only" style="margin-top:20px">
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th><th>Department</th><th>Designation</th>
-                    <th>Role</th><th>Username</th><th>Status</th><th>Verifier</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="employeesTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="employeesCards" class="employee-card-list view-mobile-only" style="margin-top:20px"></div>
-        </section>
+.topbar-user { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.topbar-user-info { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.topbar-user-namerow { display: flex; align-items: center; gap: 8px; }
+.topbar-user-info strong { font-family: var(--font-display); font-size: 0.92rem; color: #fff; }
+.topbar-tagline {
+  font-size: 0.67rem; font-weight: 500; font-style: italic;
+  color: rgba(255,255,255,.75); letter-spacing: .01em; white-space: nowrap;
+}
+.role-tag {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.35);
+}
+.logout-btn {
+  background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.3);
+  border-radius: var(--r-sm); padding: 6px 12px;
+  color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+}
+.logout-btn:hover { background: rgba(255,255,255,.25); }
 
-        <!-- MANAGE SITES -->
-        <section id="view-sites" class="view" hidden>
-          <div class="view-header-row">
-            <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">Manage sites</h2>
-              <p class="view-sub">Track construction sites and assigned personnel.</p>
-            </div>
-            <button id="openAddSite" class="primary-btn primary-btn-inline">+ Add site</button>
-          </div>
-          <div class="table-card" style="margin-top:20px">
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Site name</th><th>Client</th><th>Location</th>
-                    <th>Type</th><th>Status</th><th>Team leader</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="sitesTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+/* ================================================================
+   SIDEBAR
+   ================================================================ */
+.app-body { display: flex; min-height: calc(100vh - var(--topbar-h)); }
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  padding: 14px 10px 28px;
+  position: sticky; top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h)); overflow-y: auto;
+  transition: transform .22s cubic-bezier(.4,0,.2,1); z-index: 15;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 
-        <!-- MASTER DATA -->
-        <section id="view-masterdata" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">Departments &amp; task types</h2>
-            <p class="view-sub">Manage the master lists used across all task assignments.</p>
-          </div>
-          <div class="field-grid">
-            <div>
-              <h3 class="subsection-title">Departments</h3>
-              <form id="addDepartmentForm" class="task-form">
-                <div class="field">
-                  <label for="new-department-name">Department name</label>
-                  <input id="new-department-name" type="text" placeholder="e.g., Engg. Division" required />
-                </div>
-                <p id="addDepartmentMsg" class="form-error" hidden></p>
-                <button type="submit" class="primary-btn">Add department</button>
-              </form>
-              <div class="table-card" style="margin-top:16px">
-                <table class="data-table">
-                  <thead><tr><th>Department</th></tr></thead>
-                  <tbody id="departmentsTableBody"></tbody>
-                </table>
-              </div>
-            </div>
-            <div>
-              <h3 class="subsection-title">Task types</h3>
-              <form id="addTaskTypeForm" class="task-form">
-                <div class="field">
-                  <label for="new-tasktype-name">Task type name</label>
-                  <input id="new-tasktype-name" type="text" placeholder="e.g., Site Visit" required />
-                </div>
-                <p id="addTaskTypeMsg" class="form-error" hidden></p>
-                <button type="submit" class="primary-btn">Add task type</button>
-              </form>
-              <div class="table-card" style="margin-top:16px">
-                <table class="data-table">
-                  <thead><tr><th>Task type</th></tr></thead>
-                  <tbody id="taskTypesTableBody"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
+.nav-list { display: flex; flex-direction: column; gap: 2px; }
+.nav-section-label {
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--slate);
+  padding: 16px 12px 6px;
+}
+.nav-btn {
+  display: flex; align-items: center; gap: 9px; text-align: left; width: 100%;
+  padding: 9px 12px; border-radius: var(--r-sm); border: none; background: none;
+  color: var(--ink-soft); font-weight: 600; font-size: 0.85rem; cursor: pointer;
+  transition: background .13s, color .13s;
+}
+.nav-btn:hover { background: var(--bg); color: var(--ink); }
+.nav-btn.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
+  color: #fff; box-shadow: 0 3px 10px -3px rgba(220,105,0,.5);
+}
+.sidebar-overlay {
+  position: fixed; inset: var(--topbar-h) 0 0 0;
+  background: rgba(15,17,35,.45); z-index: 14; backdrop-filter: blur(2px);
+}
+.sidebar-overlay[hidden] { display: none; }
 
-        <!-- PERMISSIONS -->
-        <section id="view-permissions" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">Permissions</h2>
-            <p class="view-sub">Decide what each employee is allowed to do, without making them a full admin.</p>
-          </div>
-          <div class="table-card">
-            <div class="table-scroll">
-              <table class="data-table" id="permissionsTable">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th class="perm-col">Add site</th>
-                    <th class="perm-col">Add employee</th>
-                    <th class="perm-col">Resolve tickets</th>
-                    <th class="perm-col">Verify tasks</th>
-                    <th class="perm-col">MIS Executive</th>
-                  </tr>
-                </thead>
-                <tbody id="permissionsTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left: 0; top: var(--topbar-h); transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { padding: 16px 14px 40px; }
+}
+@media (min-width: 769px) {
+  .icon-btn { display: none; }
+}
 
-        <!-- VERIFICATIONS -->
-        <section id="view-verifications" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">Verification requests</h2>
-            <p class="view-sub">Review and approve tasks pending your sign-off.</p>
-          </div>
-          <div class="table-card view-desktop-only">
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th class="col-reqid">Request ID</th>
-                    <th class="col-tasksr">Task Sr No</th>
-                    <th class="col-vproject">Project</th>
-                    <th class="col-vtasktype">Task Type</th>
-                    <th class="col-vsubmitted">Submitted By</th>
-                    <th class="col-vattach">Attachments</th>
-                    <th class="col-vdate">Submission Date</th>
-                    <th class="col-vactions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="verificationsTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="verificationsList" class="task-list view-mobile-only"></div>
-        </section>
+/* ================================================================
+   MAIN CONTENT
+   ================================================================ */
+.main-content {
+  flex: 1 1 auto; padding: 26px 28px 52px;
+  min-width: 0; width: 100%;
+}
+.view[hidden] { display: none; }
 
-        <!-- APPLY LEAVE (everyone) -->
-        <section id="view-applyleave" class="view" hidden>
-          <div class="view-header-row">
-            <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">🌴 Apply Leave</h2>
-              <p class="view-sub">Submit a leave request and track its approval status.</p>
-            </div>
-            <button id="openApplyLeave" class="primary-btn primary-btn-inline">+ Apply leave</button>
-          </div>
-          <div id="myLeavesList" class="ticket-list" style="margin-top:20px"></div>
-        </section>
+.view-heading { margin-bottom: 20px; }
+.view-title { font-size: 1.18rem; color: var(--ink); margin-bottom: 4px; }
+.view-sub { font-size: 0.82rem; color: var(--muted); }
 
-        <!-- LEAVE APPROVALS (admin) -->
-        <section id="view-leaveapprovals" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">🗒️ Leave Approvals</h2>
-            <p class="view-sub">Review leave requests raised by the team and approve or reject them.</p>
-          </div>
-          <div class="filter-panel">
-            <div class="filter-row">
-              <div class="filter-field">
-                <label class="filter-label">Status</label>
-                <select id="leaveApprovalsStatusFilter">
-                  <option value="">All</option>
-                  <option value="Pending" selected>Pending</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div id="leaveApprovalsList" class="ticket-list" style="margin-top:20px"></div>
-        </section>
+.view-header-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; margin-bottom: 0;
+}
 
-        <!-- TICKETS -->
-        <section id="view-tickets" class="view" hidden>
-          <div class="view-header-row">
-            <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">Tickets</h2>
-              <p class="view-sub">Raise and track support issues.</p>
-            </div>
-            <button id="openRaiseTicket" class="primary-btn primary-btn-inline">+ Raise ticket</button>
-          </div>
-          <div id="ticketsList" class="ticket-list" style="margin-top:20px"></div>
-        </section>
+.subsection-title { font-size: 0.95rem; margin: 0 0 14px; color: var(--ink-soft); }
 
-        <!-- CORRECTIONS 
-        <section id="view-corrections" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">↩ Corrections</h2>
-            <p class="view-sub">Tasks sent back to you — review the note and resubmit for verification.</p>
-          </div>
-          <div id="correctionsList" class="task-list" style="margin-top:20px"></div>
-        </section>-->
-<!-- CORRECTIONS -->
-        <section id="view-corrections" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">↩ Corrections</h2>
-            <p class="view-sub">Tasks sent back to you — review the note and resubmit for verification.</p>
-          </div>
-          <div class="table-card view-desktop-only" style="margin-top:20px">
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th class="col-sr">Sr No</th>
-                    <th class="col-details">Task details</th>
-                    <th>Correction note</th>
-                    <th class="col-priority">Priority</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="correctionsTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div id="correctionsList" class="task-list view-mobile-only" style="margin-top:20px"></div>
-        </section>
-        <!-- UPDATIONS -->
-        <section id="view-updations" class="view" hidden>
-          <div class="view-heading">
-            <h2 class="view-title">📝 Updations</h2>
-            <p class="view-sub">Tasks where admin/verifier has requested changes — review the note and make updates.</p>
-          </div>
-          <div id="updationsList" class="task-list" style="margin-top:20px"></div>
-        </section>
+/* ================================================================
+   FILTER PANEL
+   ================================================================ */
+.filter-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 16px 18px;
+  margin-bottom: 18px; box-shadow: var(--sh-sm);
+}
+.filter-row {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+.filter-field { display: flex; flex-direction: column; gap: 5px; }
+.filter-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+}
+.filter-field select,
+.filter-field input[type="date"] {
+  padding: 8px 11px; border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface-2);
+  color: var(--ink); font-size: 0.83rem; cursor: pointer;
+  transition: border-color .15s; outline: none; min-width: 140px;
+}
+.filter-field select:focus,
+.filter-field input[type="date"]:focus { border-color: var(--primary); }
 
-        <!-- RECURRING TASKS -->
-        <section id="view-recurring" class="view" hidden>
-          <div class="view-header-row">
-            <div class="view-heading" style="margin-bottom:0">
-              <h2 class="view-title">🔁 Recurring Tasks</h2>
-              <p class="view-sub" id="recurringViewSub">Tasks that repeat on a schedule.</p>
-            </div>
-            <button id="openAddRecurring" class="primary-btn primary-btn-inline" hidden>+ Add recurring task</button>
-          </div>
-          <div id="adminRecurringWrap" hidden>
-            <div class="table-card view-desktop-only" style="margin-top:20px">
-              <div class="table-scroll">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th><th>Description</th><th>Frequency</th>
-                      <th>Period</th><th>Checkpoints</th><th>Active</th><th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="recurringTasksTableBody"></tbody>
-                </table>
-              </div>
-            </div>
-            <div id="adminRecurringCards" class="task-list view-mobile-only" style="margin-top:20px"></div>
-          </div>
-         <!-- <div id="employeeRecurringWrap" hidden style="margin-top:20px">
-            <div id="employeeRecurringList"></div>
-          </div> -->
-          <div id="employeeRecurringWrap" hidden style="margin-top:20px">
-            <div class="table-card view-desktop-only">
-              <div class="table-scroll">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Task</th><th>Frequency</th><th>Period</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="employeeRecurringTableBody"></tbody>
-                </table>
-              </div>
-            </div>
-            <div id="employeeRecurringList" class="view-mobile-only"></div>
-          </div>
-        </section>
+.range-count {
+  font-size: 0.78rem; color: var(--muted); margin-top: 10px;
+  padding: 6px 10px; background: var(--primary-lt);
+  border-radius: var(--r-sm); display: inline-block;
+  color: var(--primary-dk); font-weight: 600;
+}
 
-        <!-- REPORTS (admin only) -->
-        <section id="view-reports" class="view" hidden>
-          <div class="rpt-screen-header">
-            <div>
-              <h2 class="view-title">&#128202; Reports</h2>
-              <p class="view-sub">Work &amp; Verification Dashboard</p>
-            </div>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <div style="display:flex;gap:6px">
-                <button class="report-range-btn active" data-range="day">Today</button>
-                <button class="report-range-btn" data-range="week">This week</button>
-                <button class="report-range-btn" data-range="month">This month</button>
-                <button class="report-range-btn" data-range="custom">Custom</button>
-              </div>
-              <div id="reportCustomDates" style="display:none;gap:8px;align-items:center">
-                <input type="date" id="reportFrom" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" />
-                <span style="color:var(--text-muted);font-size:12px">to</span>
-                <input type="date" id="reportTo" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" />
-              </div>
-              <button id="loadReportBtn" class="primary-btn primary-btn-inline" style="height:36px">Load</button>
-              <button id="exportPdfBtn" onclick="exportReportPdf()" style="height:36px;padding:0 16px;border-radius:8px;border:1.5px solid #6366f1;background:#fff;color:#6366f1;font-weight:600;font-size:13px;cursor:pointer;display:none">&#11015; Export PDF</button>
-            </div>
-          </div>
-          <div id="reportPrintArea"></div>
-        </section>
+/* ================================================================
+   TABLE CARD
+   ================================================================ */
+.table-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: visible; box-shadow: var(--sh-xs);
+  max-width: 100%;
+}
+/* Clip only the top corners so the rounded header still looks right */
+.data-table thead th:first-child { border-radius: var(--r-lg) 0 0 0; }
+.data-table thead th:last-child  { border-radius: 0 var(--r-lg) 0 0; }
+.table-scroll {
+  max-width: 100%;
+}
 
-      </main>
-    </div>
-  </section>
+/* Desktop = table, mobile = cards (used for "All delegated tasks",
+   "My tasks", and "Manage employees"), so nobody has to deal with a
+   cramped, side-scrolling table on a phone. !important guards against
+   any other display rule (e.g. .employee-card-list, .task-list)
+   winning the fight. */
+.view-mobile-only { display: none !important; }
+.view-desktop-only { display: block !important; }
+@media (max-width: 768px) {
+  .view-desktop-only { display: none !important; }
+  .view-mobile-only { display: flex !important; }
+}
 
-  <!-- Add Employee Modal -->
-  <div id="employeeModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Add new employee</h3>
-        <button class="modal-close" id="closeEmployeeModal">&times;</button>
-      </div>
-      <form id="employeeForm" class="modal-body">
-        <div class="field">
-          <label for="emp-fullname">Full name <span class="req">*</span></label>
-          <input id="emp-fullname" type="text" placeholder="Enter full name" required />
-        </div>
-        <div class="field">
-          <label for="emp-department">Department <span class="req">*</span></label>
-          <input id="emp-department" type="text" placeholder="e.g., Site Execution" required />
-        </div>
-        <div class="field">
-          <label for="emp-designation">Designation <span class="req">*</span></label>
-          <input id="emp-designation" type="text" placeholder="e.g., Project Manager" required />
-        </div>
-        <div class="field">
-          <label for="emp-role">Role <span class="req">*</span></label>
-          <select id="emp-role" required>
-            <option value="">Select role</option>
-            <option value="employee">Employee</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <p class="form-note">Username and password will be auto-generated after submission.</p>
-        <p id="employeeFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelEmployeeModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Add employee</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.perm-col { text-align: center; }
 
-  <!-- Edit Employee Modal -->
-  <div id="editEmployeeModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Edit employee</h3>
-        <button class="modal-close" id="closeEditEmployeeModal">&times;</button>
-      </div>
-      <form id="editEmployeeForm" class="modal-body">
-        <input type="hidden" id="edit-emp-id" />
-        <div class="field">
-          <label for="edit-emp-fullname">Full name <span class="req">*</span></label>
-          <input id="edit-emp-fullname" type="text" required />
-        </div>
-        <div class="field">
-          <label for="edit-emp-department">Department <span class="req">*</span></label>
-          <input id="edit-emp-department" type="text" required />
-        </div>
-        <div class="field">
-          <label for="edit-emp-designation">Designation <span class="req">*</span></label>
-          <input id="edit-emp-designation" type="text" required />
-        </div>
-        <div class="field">
-          <label for="edit-emp-role">Role <span class="req">*</span></label>
-          <select id="edit-emp-role" required>
-            <option value="employee">Employee</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="edit-emp-password">New password <span class="optional">(leave blank to keep current)</span></label>
-          <div class="password-field">
-            <input id="edit-emp-password" type="password" placeholder="Set a new password" minlength="6" autocomplete="new-password" />
-            <button type="button" id="toggleEditPassword" class="ghost-btn" aria-label="Show password">👁</button>
-          </div>
-        </div>
-        <p id="editEmployeeFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelEditEmployeeModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Save changes</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.data-table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  font-size: 0.84rem;
+}
+.data-table thead { position: sticky; top: 0; z-index: 2; }
+.data-table th {
+  text-align: left; padding: 14px 16px;
+  background: var(--surface-2);
+  color: var(--ink-soft); font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: .07em;
+  font-weight: 700; border-bottom: 2px solid var(--border);
+}
+.data-table td {
+  padding: 15px 16px; border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle; color: var(--ink-soft);
+  word-wrap: break-word; overflow-wrap: break-word;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr { transition: background .12s; }
+.data-table tbody tr:nth-child(even) td { background: var(--surface-2); }
+.data-table tbody tr:hover td { background: var(--primary-lt); }
 
-  <!-- Credentials Modal -->
-  <div id="credsModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Employee added ✅</h3>
-        <button class="modal-close" id="closeCredsModal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p>Share these login details with the employee — they won't be shown again.</p>
-        <div class="creds-box">
-          <div><span>Username</span><strong id="credsUsername"></strong></div>
-          <div><span>Password</span><strong id="credsPassword"></strong></div>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="primary-btn primary-btn-inline" id="closeCredsModalBtn">Done</button>
-        </div>
-      </div>
-    </div>
-  </div>
+/* Column widths for All Tasks table */
+.col-sr       { width: 5%; }
+.col-details  { width: 30%; }
+.col-date     { width: 11%; }
+.col-assigned { width: 9%; }
+.col-voice    { width: 6%; text-align: center; }
+.col-attach   { width: 6%; text-align: center; }
+.col-priority { width: 8%; }
+.col-status   { width: 11%; }
+.col-actions  { width: 14%; }
 
-  <!-- Add Site Modal -->
-  <div id="siteModal" class="modal-backdrop" hidden>
-    <div class="modal modal-wide">
-      <div class="modal-header">
-        <h3>Add new construction site</h3>
-        <button class="modal-close" id="closeSiteModal">&times;</button>
-      </div>
-      <form id="siteForm" class="modal-body">
-        <div class="field-grid">
-          <div class="field">
-            <label for="site-client">Client name <span class="req">*</span></label>
-            <input id="site-client" type="text" placeholder="Enter client name" required />
-          </div>
-          <div class="field">
-            <label for="site-name">Site name <span class="req">*</span></label>
-            <input id="site-name" type="text" placeholder="Enter site name" required />
-          </div>
-        </div>
-        <div class="field-grid">
-          <div class="field">
-            <label for="site-type">Type of project <span class="req">*</span></label>
-            <select id="site-type" required>
-              <option value="">Select project type</option>
-              <option value="Residential">Residential</option>
-              <option value="Commercial">Commercial</option>
-              <option value="Industrial">Industrial</option>
-              <option value="Institutional">Institutional</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="site-location">Site location <span class="req">*</span></label>
-            <input id="site-location" type="text" placeholder="e.g., Pune, Mumbai, Delhi" required />
-          </div>
-        </div>
-        <div class="field-grid">
-          <div class="field">
-            <label for="site-start">Start date <span class="req">*</span></label>
-            <input id="site-start" type="date" required />
-          </div>
-          <div class="field">
-            <label for="site-end">Expected end date</label>
-            <input id="site-end" type="date" />
-          </div>
-        </div>
-        <div class="field-grid">
-          <div class="field">
-            <label for="site-teamleader">Team leader <span class="req">*</span></label>
-            <select id="site-teamleader" required><option value="">Select team leader</option></select>
-          </div>
-          <div class="field">
-            <label for="site-coordinator">Co-ordinator <span class="req">*</span></label>
-            <select id="site-coordinator" required><option value="">Select coordinator</option></select>
-          </div>
-        </div>
-        <div class="field">
-          <label for="site-incharge">Site incharge <span class="req">*</span></label>
-          <select id="site-incharge" required><option value="">Select site incharge</option></select>
-        </div>
-        <div class="field">
-          <label for="site-description">Project description</label>
-          <textarea id="site-description" rows="3" placeholder="Enter project description..."></textarea>
-        </div>
-        <p id="siteFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelSiteModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Add site</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* Verification requests table columns */
+.col-reqid     { width: 8%; }
+.col-tasksr    { width: 6%; }
+.col-vproject  { width: 18%; }
+.col-vtasktype { width: 14%; }
+.col-vsubmitted{ width: 16%; }
+.col-vattach   { width: 10%; text-align: center; }
+.col-vdate     { width: 14%; }
+.col-vactions  { width: 14%; }
 
-  <!-- Toast -->
-  <div id="toast" class="toast" hidden></div>
+.sr-number {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: var(--primary-lt); color: var(--primary-dk);
+  font-size: 0.74rem; font-weight: 700; font-family: var(--font-mono);
+}
 
-  <!-- Verify Modal -->
-  <div id="verifyModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Send for verification</h3>
-        <button class="modal-close" id="closeVerifyModal">&times;</button>
-      </div>
-      <form id="verifyForm" class="modal-body">
-        <div class="field">
-          <label for="verify-person">Send to <span class="req">*</span></label>
-          <select id="verify-person" required><option value="">Select a verifier</option></select>
-        </div>
-        <div class="field">
-          <label for="verify-files">Attach files <span class="optional">(max 3, optional)</span></label>
-          <input id="verify-files" type="file" multiple accept="*/*" />
-          <span class="form-note">Hold Ctrl / Cmd to select multiple files</span>
-        </div>
-        <p id="verifyFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelVerifyModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Send</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.task-detail-line {
+  font-size: 0.8rem; color: var(--ink-soft); line-height: 1.65;
+}
+.task-detail-line + .task-detail-line { margin-top: 1px; }
+.task-detail-label {
+  font-weight: 700; color: var(--primary-dk);
+}
 
-  <!-- Ticket Modal -->
-  <div id="ticketModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Raise a ticket</h3>
-        <button class="modal-close" id="closeTicketModal">&times;</button>
-      </div>
-      <form id="ticketForm" class="modal-body">
-        <!-- Shown only when raised from a task -->
-        <div id="ticketTaskBanner" class="ticket-task-banner" hidden>
-          <span class="ticket-task-banner-icon">🔗</span>
-          <span>Linked to task: <strong id="ticketTaskBannerText"></strong></span>
-        </div>
-        <div class="field">
-          <label for="ticket-category">Category <span class="req">*</span></label>
-          <select id="ticket-category" required>
-            <option value="">Select category</option>
-            <option value="Technical">🔧 Technical issue</option>
-            <option value="Task">📋 Task related</option>
-            <option value="Access">🔑 Access / Login issue</option>
-            <option value="Other">📌 Other</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="ticket-description">Describe the issue <span class="req">*</span></label>
-          <textarea id="ticket-description" rows="4" placeholder="Explain your issue in detail..." required></textarea>
-        </div>
-        <!-- Screenshot / screen recording — shown only for Technical or Access -->
-        <div id="ticketMediaFields" class="field" hidden>
-          <label>Screenshot or screen recording <span class="optional">(optional)</span></label>
-          <p class="form-note">Attach a screenshot (PNG/JPG) or a short screen recording (MP4/WebM) to help us understand the issue.</p>
-          <input id="ticket-media" type="file" accept="image/png,image/jpeg,image/jpg,video/mp4,video/webm" />
-        </div>
-        <p id="ticketFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelTicketModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Submit ticket</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.media-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--primary-lt); color: var(--primary-dk);
+  font-size: 0.9rem; text-decoration: none;
+  transition: background .15s, transform .1s;
+}
+.media-link:hover { background: var(--primary-mid); transform: scale(1.08); }
+.media-none { color: var(--muted-lt); font-size: 0.8rem; }
 
-  <!-- Updation Modal (verifier/admin → send updation note to employee) -->
-  <div id="updationModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>📝 Request Updation</h3>
-        <button class="modal-close" id="closeUpdationModal">&times;</button>
-      </div>
-      <form id="updationForm" class="modal-body">
-        <p class="form-note" style="margin-bottom:12px">Describe what needs to be updated. The employee will see this note in their Updations section.</p>
-        <div class="field">
-          <label for="updation-note">Updation note <span class="req">*</span></label>
-          <textarea id="updation-note" rows="4" placeholder="e.g. Please update the floor plan measurements and recheck the material quantities…" required></textarea>
-        </div>
-        <p id="updationFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelUpdationModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">📤 Send Updation</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* ================================================================
+   PILLS / BADGES
+   ================================================================ */
+.pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+.pill-High, .pill-Rejected    { background: var(--rose-lt);    color: #991B1B;  border: 1px solid var(--rose-bd); }
+.pill-Medium, .pill-Pending   { background: var(--amber-lt);   color: #78350F;  border: 1px solid var(--amber-bd); }
+.pill-Low                     { background: var(--emerald-lt); color: #065F46;  border: 1px solid var(--emerald-bd); }
+.pill-Completed               { background: var(--emerald-lt); color: #065F46;  border: 1px solid var(--emerald-bd); }
+.pill-InProgress              { background: var(--blue-lt);    color: #1E40AF;  border: 1px solid var(--blue-bd); }
+.pill-PendingVerification     { background: var(--amber-lt);   color: #78350F;  border: 1px solid var(--amber-bd); }
+.pill-TicketRaised            { background: #EDE9FE;           color: #5B21B6;  border: 1px solid #C4B5FD; }
 
-  <!-- Solution Modal (admin/resolver → write solution) -->
-  <div id="solutionModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>💡 Provide solution</h3>
-        <button class="modal-close" id="closeSolutionModal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="solutionTicketInfo" class="solution-ticket-info"></div>
-        <div class="field" style="margin-top:14px">
-          <label for="solution-text">Solution / response <span class="req">*</span></label>
-          <textarea id="solution-text" rows="5" placeholder="Write the solution or action taken..."></textarea>
-        </div>
-        <p id="solutionFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelSolutionModal">Cancel</button>
-          <button type="button" class="primary-btn primary-btn-inline" id="submitSolutionBtn">Submit &amp; Resolve</button>
-        </div>
-      </div>
-    </div>
-  </div>
+/* ================================================================
+   ROW ACTIONS (in table)
+   ================================================================ */
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.row-actions button,
+.action-btn {
+  border: none; border-radius: var(--r-sm);
+  padding: 6px 11px; font-size: 0.74rem; font-weight: 700;
+  cursor: pointer; transition: filter .13s, transform .1s;
+}
+.action-btn:hover  { filter: brightness(.91); }
+.action-btn:active { transform: scale(.96); }
+.action-start    { background: var(--blue-lt);    color: #1D4ED8; }
+.action-complete { background: var(--emerald-lt); color: #047857; }
+.action-reject   { background: var(--rose-lt);    color: #B91C1C; }
+.action-updation { background: #FEF3C7;              color: #92400E; }
 
-  <!-- Apply Leave Modal -->
-  <div id="leaveModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Apply for leave</h3>
-        <button class="modal-close" id="closeLeaveModal">&times;</button>
-      </div>
-      <form id="leaveForm" class="modal-body">
-        <div class="field-grid">
-          <div class="field">
-            <label for="leave-from">From date <span class="req">*</span></label>
-            <input id="leave-from" type="date" required />
-          </div>
-          <div class="field">
-            <label for="leave-to">To date <span class="req">*</span></label>
-            <input id="leave-to" type="date" required />
-          </div>
-        </div>
-        <div class="field">
-          <label class="checkbox-label">
-            <input id="leave-halfday" type="checkbox" />
-            Half day leave
-          </label>
-        </div>
-        <div class="field">
-          <label for="leave-reason">Reason <span class="req">*</span></label>
-          <textarea id="leave-reason" rows="3" placeholder="Why are you taking leave..." required></textarea>
-        </div>
-        <p id="leaveFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelLeaveModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Submit request</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* 3-dot menu */
+.card-menu { position: relative; flex-shrink: 0; }
+.card-menu-btn {
+  background: none; border: 1.5px solid var(--border); cursor: pointer;
+  font-size: 1rem; color: var(--muted); padding: 4px 8px;
+  border-radius: var(--r-sm); line-height: 1;
+  transition: background .13s, border-color .13s;
+}
+.card-menu-btn:hover { background: var(--bg); border-color: var(--primary); color: var(--ink); }
+.card-menu-list {
+  position: fixed; z-index: 999;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--sh-md);
+  min-width: 200px; overflow: hidden;
+}
+.card-menu-list[hidden] { display: none; }
+.card-menu-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; padding: 10px 16px;
+  font-size: 0.83rem; font-weight: 600; color: var(--ink);
+  cursor: pointer; transition: background .12s;
+}
+.card-menu-item:hover { background: var(--bg); }
 
-  <!-- Reject Leave Modal (admin — reason optional) -->
-  <div id="rejectLeaveModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Reject leave request</h3>
-        <button class="modal-close" id="closeRejectLeaveModal">&times;</button>
-      </div>
-      <form id="rejectLeaveForm" class="modal-body">
-        <div class="field">
-          <label for="reject-leave-reason">Reason <span class="optional">(optional)</span></label>
-          <textarea id="reject-leave-reason" rows="3" placeholder="Let them know why (optional)..."></textarea>
-        </div>
-        <p id="rejectLeaveFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelRejectLeaveModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Reject request</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* Employee table specific */
+.status-toggle {
+  border: none; border-radius: 999px; padding: 4px 12px;
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase; cursor: pointer;
+  letter-spacing: .04em; transition: opacity .15s;
+}
+.status-toggle:hover { opacity: .78; }
+.status-toggle.active   { background: var(--emerald-lt); color: #065F46; border: 1px solid var(--emerald-bd); }
+.status-toggle.inactive { background: var(--rose-lt);    color: #991B1B; border: 1px solid var(--rose-bd); }
 
-  <!-- Recurring Task Checkpoint Modal (employee: tick checkpoints, then Submit) -->
-  <div id="checkpointModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="checkpointModalTitle">Checkpoints</h3>
-        <button class="modal-close" id="closeCheckpointModal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="checkpointModalList"></div>
-        <p id="checkpointModalMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelCheckpointModal">Cancel</button>
-          <button type="button" class="primary-btn primary-btn-inline" id="submitCheckpointModal">Submit</button>
-        </div>
-      </div>
-    </div>
-  </div>
+.role-pill {
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.role-pill.admin    { background: var(--rose-lt);  color: #991B1B; border: 1px solid var(--rose-bd); }
+.role-pill.employee { background: var(--blue-lt);  color: #1E40AF; border: 1px solid var(--blue-bd); }
 
-  <!-- Reschedule Modal -->
-  <div id="rescheduleModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Reschedule task</h3>
-        <button class="modal-close" id="closeRescheduleModal">&times;</button>
-      </div>
-      <form id="rescheduleForm" class="modal-body">
-        <div class="field">
-          <label for="reschedule-date">New target date <span class="req">*</span></label>
-          <input id="reschedule-date" type="datetime-local" required />
-        </div>
-        <p id="rescheduleFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelRescheduleModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* ================================================================
+   EMPLOYEE CARDS (mobile — "Manage employees")
+   ================================================================ */
+.employee-card-list { flex-direction: column; gap: 12px; }
+.employee-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 16px 18px;
+  box-shadow: var(--sh-sm);
+}
+.employee-card-top {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+  margin-bottom: 10px;
+}
+.employee-card-top strong { font-family: var(--font-display); font-size: 0.92rem; display: block; }
+.employee-card-meta { color: var(--muted); font-size: 0.76rem; margin-top: 2px; display: block; }
+.employee-card-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 0; border-top: 1px solid var(--border-soft); font-size: 0.83rem;
+}
+.employee-card-label { color: var(--muted); font-size: 0.74rem; font-weight: 600; }
+.employee-card-value.mono { font-family: var(--font-mono); font-size: 0.8rem; }
+.employee-card-toggles { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.employee-card-actions {
+  display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--border-soft); padding-top: 12px;
+}
 
-  <!-- SET EXTENDED TIME (Overdue view only — does not change target_date) -->
-  <div id="overdueExtendModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>⏱ Set extended time</h3>
-        <button class="modal-close" id="closeOverdueExtendModal">&times;</button>
-      </div>
-      <form id="overdueExtendForm" class="modal-body">
-        <p class="view-sub" style="margin:0 0 14px">This only affects the Overdue Tasks view — the employee and other views still show the original planned date.</p>
-        <div class="field">
-          <label for="overdue-extend-date">New time the employee asked for <span class="req">*</span></label>
-          <input id="overdue-extend-date" type="datetime-local" required />
-        </div>
-        <div class="field">
-          <label for="overdue-extend-reason">Reason (optional)</label>
-          <textarea id="overdue-extend-reason" rows="3" placeholder="e.g. waiting on material delivery"></textarea>
-        </div>
-        <p id="overdueExtendFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelOverdueExtendModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* ================================================================
+   FORMS
+   ================================================================ */
+.task-form {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 24px;
+  box-shadow: var(--sh-sm);
+  max-width: 760px;
+}
+.field { margin-bottom: 18px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 0; }
+.field label {
+  display: block; font-size: 0.72rem; font-weight: 700;
+  margin-bottom: 7px; color: var(--ink-soft);
+  letter-spacing: .03em; text-transform: uppercase;
+}
+.field input, .field select, .field textarea {
+  width: 100%; padding: 10px 13px;
+  border: 1.5px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); outline: none; resize: vertical; color: var(--ink);
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--primary); box-shadow: 0 0 0 3px rgba(220,105,0,.1);
+}
+.field input[type="file"] { padding: 8px 12px; cursor: pointer; }
 
-  <!-- OVERDUE TASK DETAIL PANEL (right-side drawer: Today / Pending tabs) -->
-  <div id="overdueDrawerBackdrop" class="drawer-backdrop" hidden>
-    <div class="drawer-panel">
-      <div class="drawer-header">
-        <h3>Overdue tasks</h3>
-        <button class="modal-close" id="closeOverdueDrawer">&times;</button>
-      </div>
-      <div class="drawer-tabs">
-        <button type="button" class="drawer-tab active" id="overdueTabToday">Today <span class="tab-count" id="overdueTabTodayCount">0</span></button>
-        <button type="button" class="drawer-tab" id="overdueTabPending">Pending <span class="tab-count" id="overdueTabPendingCount">0</span></button>
-      </div>
-      <div class="drawer-body" id="overdueDrawerBody"></div>
-    </div>
-  </div>
+.req      { color: var(--rose); font-size: 0.9em; }
+.optional { color: var(--muted-lt); font-weight: 400; font-size: 0.85em; }
 
+.form-error {
+  background: var(--rose-lt); color: #9B1C1C;
+  border: 1px solid var(--rose-bd); border-radius: var(--r-sm);
+  padding: 9px 13px; font-size: 0.82rem; margin: 10px 0 0;
+}
+.form-note { font-size: 0.76rem; color: var(--muted); margin: 6px 0 0; }
+.form-footer { display: flex; justify-content: flex-end; padding-top: 6px; }
+.form-footer .primary-btn { width: auto; margin-top: 0; }
 
-  <!-- Reassign Modal -->
-  <div id="reassignModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Reassign task</h3>
-        <button class="modal-close" id="closeReassignModal">&times;</button>
-      </div>
-      <form id="reassignForm" class="modal-body">
-        <div class="field">
-          <label for="reassign-employee">New assignee <span class="req">*</span></label>
-          <select id="reassign-employee" required><option value="">Select employee</option></select>
-        </div>
-        <p class="form-note">The task will be reset to "Pending" for the new assignee.</p>
-        <p id="reassignFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelReassignModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Reassign</button>
-        </div>
-      </form>
-    </div>
-  </div>
+/* ================================================================
+   TASK CARDS (My Tasks / Verifications)
+   ================================================================ */
+.task-list { display: flex; flex-direction: column; gap: 12px; }
 
-  <!-- Correction Modal (verifier → employee) -->
-  <div id="correctionModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>↩ Send for Correction</h3>
-        <button class="modal-close" id="closeCorrectionModal">&times;</button>
-      </div>
-      <form id="correctionForm" class="modal-body">
-        <div class="field">
-          <label for="correction-note">Correction note <span class="req">*</span></label>
-          <textarea id="correction-note" rows="4" placeholder="Describe what needs to be corrected…" required></textarea>
-        </div>
-        <div class="field">
-          <label>Voice note <span class="optional">(optional)</span></label>
-          <div class="voice-recorder-wrap" id="corrVoiceRecorderWrap">
-            <div class="voice-recorder-btns">
-              <button type="button" id="corrStartRecord" class="ghost-btn-text">🎤 Start recording</button>
-              <button type="button" id="corrStopRecord" class="ghost-btn-text" disabled style="color:#e53e3e">⏹ Stop</button>
-            </div>
-            <span id="corrRecordStatus" class="form-note"></span>
-            <audio id="corrVoicePlayback" controls hidden style="margin-top:8px;width:100%"></audio>
-          </div>
-        </div>
-        <p id="correctionFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelCorrectionModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Send Correction</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.task-card {
+  position: relative; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 16px 18px 14px 22px; overflow: hidden;
+  box-shadow: var(--sh-sm);
+  transition: box-shadow .18s, transform .12s;
+}
+.task-card:hover { box-shadow: var(--sh-md); transform: translateY(-1px); }
+.task-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--priority-color, var(--slate));
+}
+.task-card.priority-High   { --priority-color: var(--rose); }
+.task-card.priority-Medium { --priority-color: var(--amber); }
+.task-card.priority-Low    { --priority-color: var(--emerald); }
 
-  <!-- Resend Verification Modal (employee after correction) -->
-  <div id="resendVerifyModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Resend for Verification</h3>
-        <button class="modal-close" id="closeResendVerifyModal">&times;</button>
-      </div>
-      <form id="resendVerifyForm" class="modal-body">
-        <p class="form-note" style="margin-bottom:12px">Sending back to: <strong id="resendVerifierName">—</strong></p>
-        <div class="field">
-          <label for="resend-files">Attach files <span class="optional">(max 3)</span></label>
-          <input id="resend-files" type="file" multiple accept="*/*" />
-          <span class="form-note">Hold Ctrl / Cmd to select multiple files</span>
-        </div>
-        <p id="resendVerifyFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelResendVerifyModal">Cancel</button>
-          <button type="submit" class="primary-btn primary-btn-inline">Resend for Verification</button>
-        </div>
-      </form>
-    </div>
-  </div>
+.task-card-top {
+  display: flex; justify-content: space-between;
+  gap: 8px; align-items: flex-start; position: relative;
+}
+.task-card-project { font-family: var(--font-display); font-weight: 700; font-size: 0.92rem; }
+.task-card-type    { color: var(--muted); font-size: 0.74rem; margin-top: 2px; }
+.task-card-desc    { margin: 10px 0; font-size: 0.85rem; line-height: 1.55; color: var(--ink-soft); }
+.task-meta {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-size: 0.75rem; color: var(--muted); margin-bottom: 10px;
+}
+.task-meta strong { color: var(--ink); font-weight: 600; }
+.task-card-footer {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; justify-content: space-between;
+  padding-top: 8px; border-top: 1px solid var(--border-soft); margin-top: 4px;
+}
+.task-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.assigned-line { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; }
+
+.attachment-link {
+  font-size: 0.76rem; color: var(--primary-dk); text-decoration: none;
+  font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
+}
+.attachment-link:hover { text-decoration: underline; }
+
+/* ================================================================
+   VERIFICATION BADGES
+   ================================================================ */
+.verify-badge {
+  display: block; padding: 8px 12px; border-radius: var(--r-sm);
+  font-size: 0.78rem; font-weight: 600; margin-bottom: 10px; line-height: 1.45;
+}
+.verify-badge.pending  { background: var(--amber-lt);   color: #78350F;  border: 1px solid var(--amber-bd); }
+.verify-badge.verified { background: var(--emerald-lt); color: #065F46;  border: 1px solid var(--emerald-bd); }
+.verify-badge.rejected { background: var(--correction-lt); color: #78350F; border: 1px solid var(--amber-bd); }
+
+/* ================================================================
+   TICKET CARDS
+   ================================================================ */
+.ticket-list { display: flex; flex-direction: column; gap: 10px; }
+.ticket-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 14px 18px; box-shadow: var(--sh-sm);
+}
+.ticket-top {
+  display: flex; justify-content: space-between;
+  gap: 10px; align-items: flex-start; margin-bottom: 6px;
+}
+.ticket-top-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Category chip */
+.ticket-category-chip {
+  font-size: 0.74rem; font-weight: 600;
+  background: #f0f4ff; color: #4f46e5;
+  border: 1px solid #c7d2fe; border-radius: 20px;
+  padding: 2px 10px; white-space: nowrap;
+}
+
+/* Linked task reference */
+.ticket-task-ref {
+  font-size: 0.78rem; color: var(--primary-mid);
+  background: #f0f4ff; border-left: 3px solid var(--primary-mid);
+  padding: 5px 10px; border-radius: 0 6px 6px 0;
+  margin-bottom: 8px; line-height: 1.4;
+}
+
+.ticket-desc { font-size: 0.86rem; color: var(--ink-soft); margin: 6px 0 8px; line-height: 1.5; }
+.ticket-meta { font-size: 0.74rem; color: var(--muted); }
+
+/* Media attachment link */
+.ticket-media-row { margin: 4px 0 8px; }
+.ticket-media-link {
+  font-size: 0.78rem; font-weight: 600; color: var(--primary-mid);
+  text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+}
+.ticket-media-link:hover { text-decoration: underline; }
+
+/* Solution box (green) — shown once admin resolves */
+.ticket-solution-box {
+  margin-top: 12px;
+  background: #f0fdf4; border: 1px solid #86efac;
+  border-radius: 8px; padding: 12px 14px;
+}
+.ticket-solution-header {
+  font-size: 0.78rem; font-weight: 700; color: #166534;
+  margin-bottom: 6px; letter-spacing: 0.01em;
+}
+.ticket-solution-text {
+  font-size: 0.86rem; color: #14532d; line-height: 1.55;
+  margin: 0 0 6px; white-space: pre-wrap;
+}
+.ticket-solution-meta { font-size: 0.72rem; color: #16a34a; }
+
+/* Task banner inside raise-ticket modal */
+.ticket-task-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #f0f4ff; border: 1px solid #c7d2fe;
+  border-radius: 8px; padding: 10px 14px;
+  margin-bottom: 14px; font-size: 0.83rem; color: #3730a3; line-height: 1.45;
+}
+.ticket-task-banner-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.ticket-task-banner strong { font-weight: 600; }
+
+/* Solution modal info block */
+.solution-ticket-info {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 14px;
+}
+.solution-ticket-summary { display: flex; flex-direction: column; gap: 4px; }
+.solution-ticket-desc {
+  font-size: 0.86rem; color: var(--ink-soft); line-height: 1.5;
+  margin: 2px 0; font-style: italic;
+}
+.solution-ticket-meta { font-size: 0.74rem; color: var(--muted); }
+
+/* ================================================================
+   CHECKBOX LABEL (used in Apply Leave half-day toggle)
+   ================================================================ */
+.checkbox-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.86rem; font-weight: 600; color: var(--ink);
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: var(--primary-mid); cursor: pointer;
+}
+
+/* ================================================================
+   MODALS
+   ================================================================ */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(10,12,25,.55);
+  z-index: 50; display: flex; align-items: center;
+  justify-content: center; padding: 16px;
+  backdrop-filter: blur(4px);
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  background: var(--surface); border-radius: var(--r-xl);
+  width: 100%; max-width: 460px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: var(--sh-modal);
+  animation: modal-enter .18s ease-out;
+}
+.modal-wide { max-width: 650px; }
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--surface); z-index: 2;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.modal-header h3 { font-size: 1rem; color: var(--ink); }
+.modal-close {
+  background: none; border: none; font-size: 1.4rem; cursor: pointer;
+  color: var(--muted); line-height: 1; padding: 4px; border-radius: 6px;
+  transition: color .13s, background .13s;
+}
+.modal-close:hover { color: var(--rose); background: var(--rose-lt); }
+.modal-body { padding: 22px 24px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+.creds-box {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 16px; margin: 16px 0;
+}
+.creds-box div {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; font-size: 0.88rem;
+}
+.creds-box div + div { border-top: 1px solid var(--border-soft); }
+.creds-box span { color: var(--muted); font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.creds-box strong { font-family: var(--font-mono); font-size: 0.92rem; color: var(--ink); }
+
+/* ================================================================
+   EMPTY STATE
+   ================================================================ */
+.empty-state {
+  text-align: center; padding: 52px 20px;
+  color: var(--muted); font-size: 0.86rem;
+}
+.empty-state .emoji { font-size: 2.4rem; display: block; margin-bottom: 10px; }
+
+/* ================================================================
+   TOAST
+   ================================================================ */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 11px 22px;
+  border-radius: var(--r-md); font-size: 0.84rem; z-index: 200;
+  box-shadow: 0 12px 32px -10px rgba(0,0,0,.4);
+  animation: toast-in .2s ease-out; white-space: nowrap;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.toast.error   { background: var(--rose); }
+.toast.success { background: var(--emerald); }
+.toast[hidden] { display: none; }
+
+/* ================================================================
+   RESPONSIVE
+   ================================================================ */
+@media (max-width: 600px) {
+  .field-grid { grid-template-columns: 1fr; }
+  .login-card { padding: 28px 20px; }
+  .modal-body { padding: 18px; }
+  .modal-header { padding: 15px 18px; }
+  .task-card { padding: 14px 14px 12px 20px; }
+  .filter-row { flex-direction: column; }
+  .filter-field { width: 100%; }
+  .filter-field select, .filter-field input[type="date"] { width: 100%; }
+}
+
+/* ================================================================
+   CORRECTIONS VIEW
+   ================================================================ */
+.correction-note-box {
+  background: #FDF0E4;
+  border-left: 4px solid var(--rose, #e53e3e);
+  border-radius: 0 var(--r-sm, 6px) var(--r-sm, 6px) 0;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.correction-note-label {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+  margin-bottom: 4px;
+}
+.correction-note-text {
+  font-size: 0.9rem;
+  color: var(--ink, #1a202c);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* ================================================================
+   VOICE RECORDER (inside correction modal)
+   ================================================================ */
+.voice-recorder-wrap {
+  background: var(--canvas-alt, #f8f9fc);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--r-sm, 6px);
+  padding: 12px 14px;
+}
+.voice-recorder-btns {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.voice-recorder-btns button {
+  font-size: 0.85rem;
+}
+
+/* ─── Recurring Tasks ──────────────────────────────────────────────────── */
+
+/* Frequency selector grid */
+.freq-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.freq-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 10px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  gap: 2px;
+}
+.freq-btn strong { font-size: 14px; font-weight: 700; color: #2d3748; }
+.freq-btn small  { font-size: 11px; color: #718096; }
+.freq-btn:hover  { border-color: #DC6900; background: #FDF0E4; }
+.freq-btn.selected {
+  border-color: #DC6900;
+  background: linear-gradient(135deg, #DC6900, #561501);
+}
+.freq-btn.selected strong,
+.freq-btn.selected small { color: #fff; }
+
+/* Day checkboxes */
+.days-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.day-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.day-check input { display: none; }
+.day-check:has(input:checked) {
+  border-color: #DC6900;
+  background: #DC6900;
+  color: #fff;
+}
+
+/* Checkpoint rows in modal */
+.checkpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.checkpoint-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.checkpoint-input:focus {
+  outline: none;
+  border-color: #DC6900;
+}
+
+/* Inline "add new" row, e.g. Task Type in recurring modal */
+.inline-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.inline-add-row input[type="text"] {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  outline: none;
+  color: var(--ink);
+}
+.inline-add-row input[type="text"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(220,105,0,.1);
+}
+
+/* Checkpoint list on employee cards */
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.checkpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #f8f9fa;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.checkpoint-item input[type=checkbox] {
+  width: 18px; height: 18px;
+  accent-color: #DC6900;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.checkpoint-item.cp-done {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.checkpoint-item.cp-done span {
+  text-decoration: line-through;
+  color: #64748b;
+}
+
+/* pill colours */
+.pill-Completed { background: #d1fae5; color: #065f46; }
 
 
-  <!-- Add/Edit Recurring Task Modal -->
-  <div id="recurringModal" class="modal-backdrop" hidden>
-    <div class="modal modal-wide">
-      <div class="modal-header">
-        <h3 id="recurringModalTitle">🔁 Create Recurring Task</h3>
-        <button class="modal-close" id="closeRecurringModal">&times;</button>
-      </div>
-      <div class="modal-body" id="recurringModalBody">
-        <input type="hidden" id="recurring-edit-id" />
-        <div class="field-grid">
-          <div class="field">
-            <label for="rec-department">Department <span class="optional">(Optional)</span></label>
-            <select id="rec-department"><option value="">Select Department</option></select>
-          </div>
-          <div class="field">
-            <label for="rec-employee">Employee <span class="req">*</span></label>
-            <select id="rec-employee" required><option value="">Select Employee</option></select>
-          </div>
-        </div>
-        <div class="field-grid">
-          <div class="field">
-            <label for="rec-tasktype">Task Type <span class="optional">(Optional)</span></label>
-            <select id="rec-tasktype">
-              <option value="">Select Task Type</option>
-              <option value="__add_new__">+ Add new task type…</option>
-            </select>
-            <div id="recNewTaskTypeRow" class="inline-add-row" hidden>
-              <input type="text" id="recNewTaskTypeInput" placeholder="New task type name…" />
-              <button type="button" id="recNewTaskTypeSave" class="primary-btn primary-btn-inline">Add</button>
-              <button type="button" id="recNewTaskTypeCancel" class="ghost-btn-text">Cancel</button>
-            </div>
-            <p id="recTaskTypeMsg" class="form-error" hidden></p>
-          </div>
-          <div class="field">
-            <label for="rec-project">Project <span class="optional">(Optional)</span></label>
-            <select id="rec-project"><option value="">Select Project</option></select>
-          </div>
-        </div>
-        <div class="field">
-          <label for="rec-description">Task Description <span class="req">*</span></label>
-          <textarea id="rec-description" rows="3" placeholder="Describe the recurring task" required></textarea>
-        </div>
-        <div class="field" hidden>
-          <label for="rec-priority">Priority</label>
-          <select id="rec-priority">
-            <option value="Low">Low</option>
-            <option value="Medium" selected>Medium</option>
-            <option value="High">High</option>
-          </select>
-        </div>
+/* ══════════════════════════════════════════════
+   REPORTS
+══════════════════════════════════════════════ */
 
-        <!-- Frequency selector -->
-        <div class="field">
-          <label>Frequency <span class="req">*</span></label>
-          <div class="freq-grid">
-            <button type="button" class="freq-btn" data-freq="Daily"><strong>Daily</strong><small>Every day</small></button>
-            <button type="button" class="freq-btn" data-freq="Weekly"><strong>Weekly</strong><small>Every week</small></button>
-            <button type="button" class="freq-btn" data-freq="Monthly"><strong>Monthly</strong><small>Every month</small></button>
-            <button type="button" class="freq-btn" data-freq="Yearly"><strong>Yearly</strong><small>Every year</small></button>
-          </div>
-        </div>
+/* ══════════════════════════════════════════════
+   REPORTS — screen + PDF layout
+══════════════════════════════════════════════ */
 
-        <!-- Weekly day selector -->
-        <div class="field" id="weeklyDaysField" hidden>
-          <label>Select Days <span class="req">*</span></label>
-          <div class="days-grid">
-            <label class="day-check"><input type="checkbox" value="0" /> Sun</label>
-            <label class="day-check"><input type="checkbox" value="1" /> Mon</label>
-            <label class="day-check"><input type="checkbox" value="2" /> Tue</label>
-            <label class="day-check"><input type="checkbox" value="3" /> Wed</label>
-            <label class="day-check"><input type="checkbox" value="4" /> Thu</label>
-            <label class="day-check"><input type="checkbox" value="5" /> Fri</label>
-            <label class="day-check"><input type="checkbox" value="6" /> Sat</label>
-          </div>
-        </div>
+.rpt-screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
 
-        <!-- Active period -->
-        <div class="field-grid">
-          <div class="field">
-            <label for="rec-start">Start Date <span class="req">*</span></label>
-            <input id="rec-start" type="date" required />
-          </div>
-          <div class="field">
-            <label for="rec-end">End Date <span class="optional">(optional)</span></label>
-            <input id="rec-end" type="date" />
-          </div>
-        </div>
+.report-range-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.report-range-btn:hover { border-color: #DC6900; color: #DC6900; }
+.report-range-btn.active {
+  background: #DC6900;
+  border-color: #DC6900;
+  color: #fff;
+  font-weight: 600;
+}
 
-        <!-- Checkpoints -->
-        <div class="field">
-          <label>Checkpoints <span class="optional">(optional)</span></label>
-          <p class="form-note">Employee must tick all checkpoints before the task is marked done.</p>
-          <div id="checkpointsList"></div>
-          <button type="button" id="addCheckpointBtn" class="ghost-btn-text" style="margin-top:8px">+ Add checkpoint</button>
-        </div>
+#reportDoc {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #111;
+  max-width: 1100px;
+  background: #f1f5f9;
+  padding: 28px;
+  border-radius: 16px;
+  margin-top: 8px;
+}
 
-        <p id="recurringFormMsg" class="form-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" class="ghost-btn-text" id="cancelRecurringModal">Cancel</button>
-          <button type="button" id="saveRecurringBtn" class="primary-btn primary-btn-inline">Create Recurring Task</button>
-        </div>
-      </div>
-    </div>
-  </div>
+.rpt-doc-header {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  border-bottom: none;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.rpt-doc-header h1 {
+  font-family: 'Sora', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: #111;
+  margin: 0 0 4px;
+}
 
-  <script src="app.js?v=3"></script>
-</body>
-</html>
+.rpt-summary-strip {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.rpt-stat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px 20px;
+  min-width: 130px;
+  flex: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.rpt-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  border-bottom: 1.5px solid #e2e8f0;
+  padding-bottom: 8px;
+  margin: 24px 0 14px;
+  letter-spacing: 0.1px;
+}
+.rpt-section-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #DC6900;
+  margin-left: 8px;
+}
+
+.rpt-emp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.rpt-emp-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.rpt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.rpt-table th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 700;
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1.5px solid #e5e7eb;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rpt-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 12px;
+}
+.rpt-table tr:last-child td { border-bottom: none; }
+.rpt-table tr:hover td { background: #fafafa; }
+.rpt-matrix th, .rpt-matrix td { text-align: left; }
+
+/* ── Print / PDF ── */
+@media print {
+  body > * { display: none !important; }
+  #appScreen { display: none !important; }
+  #reportDoc {
+    display: block !important;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    padding: 24px 32px;
+    background: #fff !important;
+    color: #000;
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .rpt-doc-header { box-shadow: none; border-bottom: 2px solid #e5e7eb; border-radius: 0; }
+  .rpt-screen-header { display: none !important; }
+  .rpt-stat-card { border: 1px solid #e5e7eb !important; break-inside: avoid; }
+  .rpt-emp-grid { grid-template-columns: repeat(4, 1fr); }
+  .rpt-table th, .rpt-table td { font-size: 9px; padding: 5px 7px; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
