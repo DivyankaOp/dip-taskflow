@@ -22,7 +22,7 @@ const TASK_SELECT = `
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
   accepted_at, rejected_at, sent_for_verification_at, verified_at,
   verification_status, verification_note, verification_attachment_urls,
-  correction_voice_url,
+  correction_voice_url, updation_note,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
   department:departments ( id, name ),
@@ -417,6 +417,45 @@ router.patch(
   }
 );
 
+// ----------------------------- send updation (verifier/admin: request changes with a note) -----------------------------
+router.patch('/:id/send-updation', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body || {};
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'Please write an updation note before sending' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, verifier_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isChosenVerifier = existing.verifier_id === req.user.id;
+    if (!isChosenVerifier && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You are not the verifier for this task' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        verification_status: 'Updation Required',
+        updation_note: note.trim(),
+        status: 'In Progress'
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Send updation error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not send updation request' });
+  }
+});
+
 // ----------------------------- reschedule (only when admin allowed it) -----------------------------
 router.patch('/:id/reschedule', async (req, res) => {
   try {
@@ -593,6 +632,24 @@ router.get('/report', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Report error:', err.message);
     res.status(500).json({ error: err.message || 'Could not generate report' });
+  }
+});
+
+// ----------------------------- mark as ticket raised (auto-called when ticket is raised) -----------------------------
+router.patch('/:id/ticket-raised', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'Ticket Raised' })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Ticket raised status error:', err.message);
+    res.status(500).json({ error: 'Could not update task status' });
   }
 });
 
