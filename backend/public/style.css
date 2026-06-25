@@ -1184,3 +1184,65 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   text-decoration: none !important;
 }
 .drw-view-btn:hover { opacity: .85; }
+
+/* ── Daily Report ── */
+.drpt-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+@media (max-width: 640px) { .drpt-summary-row { grid-template-columns: repeat(2, 1fr); } }
+.drpt-stat-card {
+  border: 2px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+  background: var(--surface, #fff);
+}
+.drpt-stat-num  { font-size: 2rem; font-weight: 800; line-height: 1; }
+.drpt-stat-label { font-size: 0.75rem; color: var(--muted, #6b7280); margin-top: 6px; }
+.drpt-stat-done    { border-color: #10b981; }
+.drpt-stat-done .drpt-stat-num { color: #10b981; }
+.drpt-stat-pending { border-color: #f59e0b; }
+.drpt-stat-pending .drpt-stat-num { color: #f59e0b; }
+.drpt-stat-overdue { border-color: #ef4444; }
+.drpt-stat-overdue .drpt-stat-num { color: #ef4444; }
+.drpt-stat-verify  { border-color: #6d28d9; }
+.drpt-stat-verify .drpt-stat-num { color: #6d28d9; }
+
+.drpt-section-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--primary, #6d28d9);
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--primary, #6d28d9);
+  margin-bottom: 10px;
+}
+.drpt-table th { background: #1e1b4b; color: #fff; white-space: nowrap; }
+.drpt-overdue-badge {
+  background: #fef2f2;
+  color: #dc2626;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.drpt-remark-input {
+  border: 1px dashed var(--border, #e5e7eb);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  width: 100%;
+  background: var(--bg, #f9fafb);
+  color: var(--text, #111);
+  transition: border-color .15s;
+}
+.drpt-remark-input:focus {
+  outline: none;
+  border-color: var(--primary, #6d28d9);
+  background: var(--surface, #fff);
+}
