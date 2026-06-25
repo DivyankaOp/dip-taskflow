@@ -7,21 +7,18 @@ const app     = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-app.use('/api/auth',      require('./routes/auth'));
-app.use('/api/tasks',     require('./routes/tasks'));
-app.use('/api/master',    require('./routes/master'));
-app.use('/api/employees', require('./routes/employees'));
-app.use('/api/sites',     require('./routes/sites'));
+app.use('/api/auth',            require('./routes/auth'));
+app.use('/api/tasks',           require('./routes/tasks'));
+app.use('/api/master',          require('./routes/master'));
+app.use('/api/employees',       require('./routes/employees'));
+app.use('/api/sites',           require('./routes/sites'));
 app.use('/api/recurring-tasks', require('./routes/recurring_tasks'));
-app.use('/api/leaves',    require('./routes/leaves'));
+app.use('/api/leaves',          require('./routes/leaves'));
+app.use('/api/tickets',         require('./routes/tickets'));   // ← YE LINE THI HI NAHI
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res) => {
-    // Prevent the browser/CDN from caching the app shell or its script —
-    // this app is updated frequently and a stale cached copy showing the
-    // wrong UI (e.g. admin controls to non-admins) is worse than the
-    // small perf cost of always revalidating.
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   }
 }));
