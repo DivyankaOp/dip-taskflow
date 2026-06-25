@@ -1028,7 +1028,8 @@ function buildCardMenuItems(task, { showAssignee }) {
   if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
     items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
   }
-  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description) });
+  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description, task.project?.name)
+});
   return items;
 }
 
