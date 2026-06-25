@@ -347,6 +347,7 @@ async function enterApp() {
   els.userName.textContent = state.user.full_name;
   els.userRoleTag.textContent = state.user.role;
   buildNav();
+  refreshNavBadges();
   if (state.user.role === 'admin') {
     await loadMasterData(); switchView('add');
   } else {
@@ -426,9 +427,47 @@ function buildNav() {
 
 function makeNavButton(key, label) {
   const btn = document.createElement('button');
-  btn.className = 'nav-btn'; btn.textContent = label; btn.dataset.view = key;
+  btn.className = 'nav-btn'; btn.dataset.view = key;
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'nav-btn-label'; labelSpan.textContent = label;
+  const badge = document.createElement('span');
+  badge.className = 'nav-badge'; badge.dataset.badgeKey = key; badge.hidden = true;
+  btn.appendChild(labelSpan);
+  btn.appendChild(badge);
   btn.addEventListener('click', () => { switchView(key); closeSidebar(); });
   return btn;
+}
+
+async function refreshNavBadges() {
+  try {
+    const counts = {};
+    const isAdmin = state.user.role === 'admin';
+    const isMisOrResolver = !!state.user.is_mis_executive || !!state.user.can_resolve_tickets;
+
+    const [tickets, tasks, leaves] = await Promise.all([
+      api('/tickets').catch(() => []),
+      isAdmin ? api('/tasks/all').catch(() => []) : api('/tasks/my').catch(() => []),
+      isAdmin ? api('/leaves/all?status=Pending').catch(() => []) : Promise.resolve([])
+    ]);
+
+    // Open tickets — visible to everyone
+    counts['tickets-open'] = (tickets || []).filter(t => t.status === 'Open').length;
+
+    if (isAdmin || isMisOrResolver) {
+      counts['leaveapprovals'] = (leaves || []).length;
+      counts['verifications'] = (tasks || []).filter(t => t.verification_status === 'Pending Verification').length;
+    } else {
+      counts['corrections'] = (tasks || []).filter(t => t.status === 'Correction').length;
+      counts['updations']   = (tasks || []).filter(t => t.status === 'Updation').length;
+      counts['my']          = (tasks || []).filter(t => t.status === 'Pending').length;
+    }
+
+    document.querySelectorAll('.nav-badge').forEach(badge => {
+      const n = counts[badge.dataset.badgeKey] || 0;
+      if (n > 0) { badge.textContent = n > 99 ? '99+' : String(n); badge.hidden = false; }
+      else badge.hidden = true;
+    });
+  } catch (_) { /* badge refresh is non-critical */ }
 }
 
 function switchView(viewKey) {
@@ -1082,9 +1121,8 @@ function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
       updateStatus(task.id, 'Rejected', reason);
     }));
   }
-  if (task.status === 'In Progress' && state.user.role === 'admin') {
-    buttons.push(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
-  }
+  // Admin's own In Progress task → no primary "Mark complete" button.
+  // Completion goes through 3-dot menu (Send for verification / Mark as done).
   if (task.status === 'Rejected') {
     buttons.push(makeActionBtn('action-start', 'Re-open', () => updateStatus(task.id, 'Pending')));
   }
@@ -1183,6 +1221,7 @@ function reloadCurrentTaskView() {
   else if (state.activeView === 'my')       loadMyTasks();
   else if (state.activeView === 'overdue')  loadOverdueTasks();
   else if (state.activeView === 'verifications') loadVerifications();
+  refreshNavBadges();
 }
 
 document.addEventListener('click', () => {
@@ -1648,7 +1687,9 @@ els.ticketForm.addEventListener('submit', async (e) => {
 
     showToast('Ticket raised ✅', 'success');
     els.ticketModal.hidden = true;
-    if (state.activeView === 'tickets') loadTickets();
+    if (state.activeView === 'tickets-open') loadTicketsFiltered('Open');
+    else if (state.activeView === 'tickets-resolved') loadTicketsFiltered('Resolved');
+    refreshNavBadges();
   } catch (err) {
     els.ticketFormMsg.textContent = err.message;
     els.ticketFormMsg.hidden = false;
@@ -1777,7 +1818,10 @@ document.getElementById('submitSolutionBtn').addEventListener('click', async () 
     await api(`/tickets/${_solvingTicketId}/solve`, { method: 'PATCH', body: { solution } });
     showToast('Solution submitted & ticket resolved ✅', 'success');
     document.getElementById('solutionModal').hidden = true;
-    loadTickets();
+    if (state.activeView === 'tickets-open') loadTicketsFiltered('Open');
+    else if (state.activeView === 'tickets-resolved') loadTicketsFiltered('Resolved');
+    else loadTickets();
+    refreshNavBadges();
   } catch (err) {
     msgEl.textContent = err.message;
     msgEl.hidden = false;
@@ -3559,13 +3603,17 @@ document.addEventListener('change', (e) => {
 // ═══════════════════════════════════════════════════════════════════
 
 function loadDailyReport() {
-  const dateInput = document.getElementById('drptDate');
-  const genBtn    = document.getElementById('drptGenBtn');
-  const dlBtn     = document.getElementById('drptDownloadBtn');
-  const body      = document.getElementById('drptBody');
-  const subtitle  = document.getElementById('drptSubtitle');
+  const modeToggle = document.getElementById('drptModeToggle');
+  const singleBox  = document.getElementById('drptSingleBox');
+  const rangeBox   = document.getElementById('drptRangeBox');
+  const dateInput  = document.getElementById('drptDate');
+  const fromInput  = document.getElementById('drptFrom');
+  const toInput    = document.getElementById('drptTo');
+  const genBtn     = document.getElementById('drptGenBtn');
+  const dlBtn      = document.getElementById('drptDownloadBtn');
+  const body       = document.getElementById('drptBody');
 
-  // Default: yesterday
+  // Default: yesterday for single mode
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = yesterday.toISOString().slice(0, 10);
@@ -3574,13 +3622,31 @@ function loadDailyReport() {
     dateInput._drptInit = true;
   }
 
-  // Generate on button click
+  // Range defaults: last 7 days
+  if (fromInput && !fromInput._drptInit) {
+    const from = new Date(); from.setDate(from.getDate() - 7);
+    fromInput.value = from.toISOString().slice(0, 10);
+    toInput.value = yStr;
+    fromInput._drptInit = true;
+  }
+
+  // Mode toggle: single ↔ range
+  if (modeToggle && !modeToggle._drptBound) {
+    modeToggle._drptBound = true;
+    modeToggle.addEventListener('click', () => {
+      const isRange = singleBox.hidden;
+      singleBox.hidden = !isRange;
+      rangeBox.hidden  = isRange;
+      modeToggle.textContent = isRange ? '📅 Switch to date range' : '📅 Switch to single date';
+    });
+  }
+
   if (genBtn && !genBtn._drptBound) {
     genBtn._drptBound = true;
     genBtn.addEventListener('click', () => generateDailyReport());
-    // Also generate on date change
-    dateInput.addEventListener('change', () => generateDailyReport());
-    // Auto-generate on first load
+    dateInput.addEventListener('change', () => {
+      if (!singleBox.hidden) generateDailyReport();
+    });
     generateDailyReport();
   }
 
@@ -3591,46 +3657,54 @@ function loadDailyReport() {
 }
 
 async function generateDailyReport() {
-  const dateInput = document.getElementById('drptDate');
-  const body      = document.getElementById('drptBody');
-  const subtitle  = document.getElementById('drptSubtitle');
-  const dlBtn     = document.getElementById('drptDownloadBtn');
+  const singleBox  = document.getElementById('drptSingleBox');
+  const isRange    = singleBox && singleBox.hidden;
+  const dateInput  = document.getElementById('drptDate');
+  const fromInput  = document.getElementById('drptFrom');
+  const toInput    = document.getElementById('drptTo');
+  const body       = document.getElementById('drptBody');
+  const subtitle   = document.getElementById('drptSubtitle');
+  const dlBtn      = document.getElementById('drptDownloadBtn');
 
-  const reportDate = dateInput.value;
-  if (!reportDate) return;
+  if (isRange) {
+    const fromVal = fromInput?.value;
+    const toVal   = toInput?.value;
+    if (!fromVal || !toVal) return;
+    if (new Date(toVal) < new Date(fromVal)) {
+      body.innerHTML = `<div class="empty-state">⚠️ "To" date must be on or after "From" date.</div>`;
+      return;
+    }
+    await generateRangeReport(fromVal, toVal, body, subtitle, dlBtn);
+  } else {
+    const reportDate = dateInput?.value;
+    if (!reportDate) return;
+    await generateSingleDateReport(reportDate, body, subtitle, dlBtn);
+  }
+}
 
+async function generateSingleDateReport(reportDate, body, subtitle, dlBtn) {
   const d = new Date(reportDate);
   const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
   if (subtitle) subtitle.textContent = `Report for ${label}`;
-
   body.innerHTML = `<div class="empty-state">Generating report…</div>`;
 
   try {
     const allTasks = await api('/tasks/all');
-    const today = new Date(); today.setHours(0,0,0,0);
     const rDate = new Date(reportDate); rDate.setHours(0,0,0,0);
     const rDateEnd = new Date(rDate); rDateEnd.setDate(rDateEnd.getDate() + 1);
 
-    // ── categorise tasks ───────────────────────────────────────────
-    const doneTasks      = [];  // completed on report date
-    const pendingTasks   = [];  // not done, deadline <= reportDate
-    const verifyingTasks = [];  // pending verification as of reportDate
-    const overdueTasks   = [];  // target_date < reportDate and not done
+    const doneTasks      = [];
+    const pendingTasks   = [];
+    const verifyingTasks = [];
+    const overdueTasks   = [];
 
     allTasks.forEach(t => {
       const isDone = t.status === 'Completed' || t.verification_status === 'Verified';
       const targetD = t.target_date ? new Date(t.target_date) : null;
       if (targetD) targetD.setHours(0,0,0,0);
 
-      if (isDone) {
-        // Show in done if completed on or before report date
-        doneTasks.push(t);
-        return;
-      }
-      if (t.verification_status === 'Pending Verification') {
-        verifyingTasks.push(t);
-        return;
-      }
+      if (isDone) { doneTasks.push(t); return; }
+      if (t.verification_status === 'Pending Verification') { verifyingTasks.push(t); return; }
       if (targetD && targetD < rDateEnd) {
         const days = Math.floor((rDate - targetD) / 86400000);
         pendingTasks.push({ ...t, _daysLate: Math.max(0, days) });
@@ -3638,38 +3712,21 @@ async function generateDailyReport() {
       }
     });
 
-    // Sort overdue by days descending
     overdueTasks.sort((a, b) => b._daysLate - a._daysLate);
     pendingTasks.sort((a, b) => b._daysLate - a._daysLate);
 
     body.innerHTML = '';
-
-    // ── Summary cards ──────────────────────────────────────────────
-    const summaryHtml = `
+    body.insertAdjacentHTML('beforeend', `
       <div class="drpt-summary-row">
-        <div class="drpt-stat-card drpt-stat-done">
-          <div class="drpt-stat-num">${doneTasks.length}</div>
-          <div class="drpt-stat-label">✅ Completed</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-pending">
-          <div class="drpt-stat-num">${pendingTasks.length}</div>
-          <div class="drpt-stat-label">⏳ Pending</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-overdue">
-          <div class="drpt-stat-num">${overdueTasks.length}</div>
-          <div class="drpt-stat-label">🔴 Overdue</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-verify">
-          <div class="drpt-stat-num">${verifyingTasks.length}</div>
-          <div class="drpt-stat-label">🔎 Under Verification</div>
-        </div>
-      </div>`;
-    body.insertAdjacentHTML('beforeend', summaryHtml);
+        <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${doneTasks.length}</div><div class="drpt-stat-label">✅ Completed</div></div>
+        <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${pendingTasks.length}</div><div class="drpt-stat-label">⏳ Pending</div></div>
+        <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdueTasks.length}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
+        <div class="drpt-stat-card drpt-stat-verify"><div class="drpt-stat-num">${verifyingTasks.length}</div><div class="drpt-stat-label">🔎 Under Verification</div></div>
+      </div>`);
 
-    // ── Overdue Tasks table ────────────────────────────────────────
     if (overdueTasks.length) {
       body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title">🔴 Overdue Tasks</div>`);
-      const tbl = buildDrptTable(
+      body.appendChild(buildDrptTable(
         ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
         overdueTasks.map((t, i) => ({
           sr: i + 1,
@@ -3680,17 +3737,13 @@ async function generateDailyReport() {
           days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
           status: t.status,
           remarks: t._remarks || ''
-        })),
-        true // editable remarks
-      );
-      body.appendChild(tbl);
+        })), true));
     }
 
-    // ── Pending Tasks table ────────────────────────────────────────
     const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
     if (pendingNotOverdue.length) {
       body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
-      const tbl = buildDrptTable(
+      body.appendChild(buildDrptTable(
         ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
         pendingNotOverdue.map((t, i) => ({
           sr: i + 1,
@@ -3700,16 +3753,12 @@ async function generateDailyReport() {
           target_date: t.target_date ? fmtDate(t.target_date) : '—',
           status: t.status,
           remarks: t._remarks || ''
-        })),
-        true
-      );
-      body.appendChild(tbl);
+        })), true));
     }
 
-    // ── Under Verification table ───────────────────────────────────
     if (verifyingTasks.length) {
       body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
-      const tbl = buildDrptTable(
+      body.appendChild(buildDrptTable(
         ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
         verifyingTasks.map((t, i) => ({
           sr: i + 1,
@@ -3719,16 +3768,12 @@ async function generateDailyReport() {
           verifier: t.verifier?.full_name ?? '—',
           target_date: t.target_date ? fmtDate(t.target_date) : '—',
           status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
-        })),
-        false
-      );
-      body.appendChild(tbl);
+        })), false));
     }
 
-    // ── Completed Tasks table ──────────────────────────────────────
     if (doneTasks.length) {
       body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
-      const tbl = buildDrptTable(
+      body.appendChild(buildDrptTable(
         ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
         doneTasks.map((t, i) => ({
           sr: i + 1,
@@ -3737,16 +3782,110 @@ async function generateDailyReport() {
           assignee: t.assigned_to_user?.full_name ?? '—',
           target_date: t.target_date ? fmtDate(t.target_date) : '—',
           status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
-        })),
-        false
-      );
-      body.appendChild(tbl);
+        })), false));
     }
 
     if (dlBtn) dlBtn.style.display = '';
-
   } catch (err) {
     body.innerHTML = `<div class="empty-state">Failed to generate report: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function generateRangeReport(fromVal, toVal, body, subtitle, dlBtn) {
+  const fromD  = new Date(fromVal); fromD.setHours(0,0,0,0);
+  const toD    = new Date(toVal);   toD.setHours(23,59,59,999);
+  const fmtShort = iso => new Date(iso).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  if (subtitle) subtitle.textContent = `Range Report: ${fmtShort(fromVal)} to ${fmtShort(toVal)}`;
+  body.innerHTML = `<div class="empty-state">Generating range report…</div>`;
+
+  try {
+    const allTasks = await api('/tasks/all');
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    // Flat rows — all tasks whose target_date falls within [fromD, toD]
+    const rows = [];
+    allTasks.forEach(t => {
+      const targetD = t.target_date ? new Date(t.target_date) : null;
+      if (!targetD) return;
+      targetD.setHours(0,0,0,0);
+      if (targetD < fromD || targetD > toD) return;
+
+      const isDone = t.status === 'Completed' || t.verification_status === 'Verified';
+      const isPendingVerif = t.verification_status === 'Pending Verification';
+      let delay = '—';
+      let delayClass = '';
+      if (!isDone && !isPendingVerif) {
+        const daysLate = Math.floor((today - targetD) / 86400000);
+        if (daysLate > 0) {
+          delay = `${daysLate}d late`;
+          delayClass = 'drpt-overdue-badge';
+        } else if (daysLate === 0) {
+          delay = 'Due today';
+        } else {
+          delay = `In ${-daysLate}d`;
+        }
+      } else if (isDone) {
+        delay = '✅ Done';
+      } else if (isPendingVerif) {
+        delay = '🔎 Verifying';
+      }
+
+      rows.push({
+        _targetD: targetD,
+        sr: 0, // filled after sort
+        date: targetD.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
+        project: t.project?.name ?? '—',
+        task: t.description,
+        assignee: t.assigned_to_user?.full_name ?? '—',
+        delay: delayClass ? `<span class="${delayClass}">${delay}</span>` : delay,
+        status: t.status,
+        remarks: ''
+      });
+    });
+
+    // Sort by target_date ascending (like PMS sheet)
+    rows.sort((a, b) => a._targetD - b._targetD);
+    rows.forEach((r, i) => { r.sr = i + 1; });
+
+    body.innerHTML = '';
+
+    // Summary
+    const doneCount    = rows.filter(r => r.status === 'Completed').length;
+    const overdueCount = allTasks.filter(t => {
+      const d = t.target_date ? new Date(t.target_date) : null;
+      if (!d) return false; d.setHours(0,0,0,0);
+      return d >= fromD && d <= toD && d < today
+        && t.status !== 'Completed' && t.verification_status !== 'Verified';
+    }).length;
+    body.insertAdjacentHTML('beforeend', `
+      <div class="drpt-summary-row">
+        <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${doneCount}</div><div class="drpt-stat-label">✅ Completed</div></div>
+        <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdueCount}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
+        <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${rows.length}</div><div class="drpt-stat-label">📋 Total Tasks</div></div>
+      </div>`);
+
+    if (!rows.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="empty-state">No tasks with target date in this range.</div>`);
+      return;
+    }
+
+    const rangeLabel = `${fmtShort(fromVal)} – ${fmtShort(toVal)}`;
+    body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title">📋 Task Report (${rangeLabel})</div>`);
+    body.appendChild(buildDrptTable(
+      ['Sr', 'Date', 'Project', 'Task', 'Assignee', 'Delay / Status', 'Remarks'],
+      rows.map(r => ({
+        sr: r.sr,
+        date: r.date,
+        project: r.project,
+        task: r.task,
+        assignee: r.assignee,
+        delay: r.delay,
+        remarks: r.remarks
+      })), true));
+
+    if (dlBtn) dlBtn.style.display = '';
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state">Failed to generate range report: ${escapeHtml(err.message)}</div>`;
   }
 }
 
