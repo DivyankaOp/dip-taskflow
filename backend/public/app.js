@@ -3617,20 +3617,15 @@ document.addEventListener('change', (e) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// ─── DAILY REPORT MODULE ──────────────────────────────════════════
+// ─── DAILY REPORT MODULE ──────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
-// Track which mode is active: 'single' or 'range'
-let _drptMode = 'single';
-
 function loadDailyReport() {
-  const dateInput  = document.getElementById('drptDate');
-  const fromInput  = document.getElementById('drptFrom');
-  const toInput    = document.getElementById('drptTo');
-  const genBtn     = document.getElementById('drptGenBtn');
-  const dlBtn      = document.getElementById('drptDownloadBtn');
-  const modeSingle = document.getElementById('drptModeSingle');
-  const modeRange  = document.getElementById('drptModeRange');
+  const dateInput = document.getElementById('drptDate');
+  const genBtn    = document.getElementById('drptGenBtn');
+  const dlBtn     = document.getElementById('drptDownloadBtn');
+  const body      = document.getElementById('drptBody');
+  const subtitle  = document.getElementById('drptSubtitle');
 
   // Default: yesterday
   const yesterday = new Date();
@@ -3641,34 +3636,13 @@ function loadDailyReport() {
     dateInput._drptInit = true;
   }
 
-  // Mode toggle buttons
-  if (modeSingle && !modeSingle._drptBound) {
-    modeSingle._drptBound = true;
-    modeSingle.addEventListener('click', () => {
-      _drptMode = 'single';
-      modeSingle.classList.add('active');
-      modeRange.classList.remove('active');
-      document.getElementById('drptSingleFields').hidden = false;
-      document.getElementById('drptRangeFields').hidden  = true;
-    });
-    modeRange.addEventListener('click', () => {
-      _drptMode = 'range';
-      modeRange.classList.add('active');
-      modeSingle.classList.remove('active');
-      document.getElementById('drptSingleFields').hidden = true;
-      document.getElementById('drptRangeFields').hidden  = false;
-    });
-  }
-
+  // Generate on button click
   if (genBtn && !genBtn._drptBound) {
     genBtn._drptBound = true;
-    genBtn.addEventListener('click', () => {
-      if (_drptMode === 'range') generateRangeReport();
-      else generateDailyReport();
-    });
-    dateInput.addEventListener('change', () => {
-      if (_drptMode === 'single') generateDailyReport();
-    });
+    genBtn.addEventListener('click', () => generateDailyReport());
+    // Also generate on date change
+    dateInput.addEventListener('change', () => generateDailyReport());
+    // Auto-generate on first load
     generateDailyReport();
   }
 
