@@ -1678,7 +1678,7 @@ function renderUpdationsList(tasks) {
   const listEl = document.getElementById('updationsList');
   if (!listEl) return;
   if (!tasks.length) {
-    listEl.innerHTML = '<div class="empty-state"><span class="emoji">📝</span>No updations pending — you're all good!</div>';
+    listEl.innerHTML = '<div class="empty-state"><span class="emoji">📝</span>No updations pending — you are all good!</div>';
     return;
   }
   listEl.innerHTML = '';
