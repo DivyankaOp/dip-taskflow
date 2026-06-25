@@ -1678,30 +1678,30 @@ function renderUpdationsList(tasks) {
   const listEl = document.getElementById('updationsList');
   if (!listEl) return;
   if (!tasks.length) {
-    listEl.innerHTML = '<div class="empty-state"><span class="emoji">📝</span>No updations pending — you are all good!</div>';
+    listEl.innerHTML = `<div class="empty-state"><span class="emoji">📝</span>No updations pending — you're all good!</div>`;
     return;
   }
   listEl.innerHTML = '';
   tasks.forEach((task) => {
     const card = document.createElement('div');
-    card.className = \`task-card priority-\${task.priority}\`;
-    card.innerHTML = \`
+    card.className = `task-card priority-${task.priority}`;
+    card.innerHTML = `
       <div class="task-card-top">
         <div>
-          <div class="task-card-project">\${escapeHtml(task.project?.name ?? '—')}</div>
-          <div class="task-card-type">\${escapeHtml(task.task_type?.name ?? '—')} · \${escapeHtml(task.department?.name ?? '—')}</div>
+          <div class="task-card-project">${escapeHtml(task.project?.name ?? '—')}</div>
+          <div class="task-card-type">${escapeHtml(task.task_type?.name ?? '—')} · ${escapeHtml(task.department?.name ?? '—')}</div>
         </div>
         <span class="pill pill-Pending">📝 Updation Required</span>
       </div>
-      <p class="task-card-desc">\${escapeHtml(task.description)}</p>
+      <p class="task-card-desc">${escapeHtml(task.description)}</p>
       <div class="correction-note-box">
-        <div class="correction-note-label">📝 Updation note from <strong>\${escapeHtml(task.verifier?.full_name ?? 'Verifier')}</strong>:</div>
-        <div class="correction-note-text">\${escapeHtml(task.updation_note ?? '(no note)')}</div>
+        <div class="correction-note-label">📝 Updation note from <strong>${escapeHtml(task.verifier?.full_name ?? 'Verifier')}</strong>:</div>
+        <div class="correction-note-text">${escapeHtml(task.updation_note ?? '(no note)')}</div>
       </div>
       <div class="task-card-footer">
-        <span class="pill pill-InProgress">\${task.status}</span>
+        <span class="pill pill-InProgress">${task.status}</span>
       </div>
-    \`;
+    `;
     listEl.appendChild(card);
   });
 }
