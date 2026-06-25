@@ -403,6 +403,7 @@ function buildNav() {
     corrLabel.className = 'nav-section-label'; corrLabel.textContent = 'Corrections';
     els.navList.appendChild(corrLabel);
     els.navList.appendChild(makeNavButton('corrections', '↩ Corrections'));
+    els.navList.appendChild(makeNavButton('updations', '📝 Updations'));
   }
 
   const supportLabel = document.createElement('div');
@@ -436,6 +437,7 @@ function switchView(viewKey) {
   if (viewKey === 'verifications') loadVerifications();
   if (viewKey === 'tickets')       loadTickets();
   if (viewKey === 'corrections')   loadCorrections();
+  if (viewKey === 'updations')     loadUpdations();
   if (viewKey === 'recurring')     loadRecurringView();
   if (viewKey === 'reports')       initReportsView();
   if (viewKey === 'applyleave')      loadMyLeaves();
@@ -990,6 +992,12 @@ function getDeadlineHtml(task, showAssignee) {
 }
 
 function verificationBadgeHtml(task) {
+  if (task.verification_status === 'Updation Required') {
+    return `<span class="pill pill-Pending" style="font-size:0.7rem">📝 Updation Required</span>`;
+  }
+  if (task.status === 'Ticket Raised') {
+    return `<span class="pill pill-Pending" style="font-size:0.7rem">🎫 Ticket Raised</span>`;
+  }
   if (task.verification_status === 'Pending Verification') {
     return `<div class="verify-badge pending">⏳ Sent for verification to <strong>${escapeHtml(task.verifier?.full_name ?? '—')}</strong></div>`;
   }
@@ -1028,8 +1036,7 @@ function buildCardMenuItems(task, { showAssignee }) {
   if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
     items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
   }
-  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description, task.project?.name)
-});
+  items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description, task.project?.name) });
   return items;
 }
 
@@ -1119,6 +1126,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
       }));
       actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+      actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     });
     actionsEl.appendChild(startBtn);
     return card;
@@ -1189,6 +1197,7 @@ function startVerificationInline(taskId, actionsEl) {
     if (confirm('Mark this task as Verified?')) verifyApprove(taskId);
   }));
   actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(taskId)));
+  actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(taskId)));
 }
 
 async function verifyApprove(taskId) {
@@ -1616,6 +1625,86 @@ els.ticketForm.addEventListener('submit', async (e) => {
     els.ticketFormMsg.hidden = false;
   }
 });
+
+// ─── Updation Modal (verifier/admin → employee: request task updation) ──────────
+function openUpdationModal(taskId) {
+  state.pendingTaskId = taskId;
+  document.getElementById('updation-note').value = '';
+  document.getElementById('updationFormMsg').hidden = true;
+  document.getElementById('updationModal').hidden = false;
+}
+
+document.getElementById('closeUpdationModal').addEventListener('click', () => {
+  document.getElementById('updationModal').hidden = true;
+});
+document.getElementById('cancelUpdationModal').addEventListener('click', () => {
+  document.getElementById('updationModal').hidden = true;
+});
+document.getElementById('updationForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const note = document.getElementById('updation-note').value.trim();
+  const msgEl = document.getElementById('updationFormMsg');
+  msgEl.hidden = true;
+  if (!note) {
+    msgEl.textContent = 'Please write an updation note before sending';
+    msgEl.hidden = false;
+    return;
+  }
+  try {
+    await api(`/tasks/${state.pendingTaskId}/send-updation`, {
+      method: 'PATCH', body: { note }
+    });
+    showToast('Updation request sent ✅', 'success');
+    document.getElementById('updationModal').hidden = true;
+    loadVerifications();
+  } catch (err) {
+    msgEl.textContent = err.message;
+    msgEl.hidden = false;
+  }
+});
+
+// ─── Load & Render Updations (employee view) ──────────────────────────────────
+async function loadUpdations() {
+  const listEl = document.getElementById('updationsList');
+  if (listEl) listEl.innerHTML = '<div class="empty-state">Loading updations…</div>';
+  try {
+    const allTasks = await api('/tasks/my');
+    const updations = allTasks.filter((t) => t.verification_status === 'Updation Required');
+    renderUpdationsList(updations);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderUpdationsList(tasks) {
+  const listEl = document.getElementById('updationsList');
+  if (!listEl) return;
+  if (!tasks.length) {
+    listEl.innerHTML = '<div class="empty-state"><span class="emoji">📝</span>No updations pending — you're all good!</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  tasks.forEach((task) => {
+    const card = document.createElement('div');
+    card.className = \`task-card priority-\${task.priority}\`;
+    card.innerHTML = \`
+      <div class="task-card-top">
+        <div>
+          <div class="task-card-project">\${escapeHtml(task.project?.name ?? '—')}</div>
+          <div class="task-card-type">\${escapeHtml(task.task_type?.name ?? '—')} · \${escapeHtml(task.department?.name ?? '—')}</div>
+        </div>
+        <span class="pill pill-Pending">📝 Updation Required</span>
+      </div>
+      <p class="task-card-desc">\${escapeHtml(task.description)}</p>
+      <div class="correction-note-box">
+        <div class="correction-note-label">📝 Updation note from <strong>\${escapeHtml(task.verifier?.full_name ?? 'Verifier')}</strong>:</div>
+        <div class="correction-note-text">\${escapeHtml(task.updation_note ?? '(no note)')}</div>
+      </div>
+      <div class="task-card-footer">
+        <span class="pill pill-InProgress">\${task.status}</span>
+      </div>
+    \`;
+    listEl.appendChild(card);
+  });
+}
 
 // ─── Solution Modal (admin / resolver) ───────────────────────────────────────
 let _solvingTicketId = null;
