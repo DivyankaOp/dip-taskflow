@@ -15,7 +15,10 @@ app.use('/api/sites',           require('./routes/sites'));
 app.use('/api/recurring-tasks', require('./routes/recurring_tasks'));
 app.use('/api/leaves',          require('./routes/leaves'));
 app.use('/api/tickets',         require('./routes/tickets'));   // ← YE LINE THI HI NAHI
+
+app.use('/api/drawings',        require('./routes/drawings'));  // ← YE ADD KARO
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
+
 
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res) => {
