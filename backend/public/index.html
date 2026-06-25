@@ -224,6 +224,7 @@
                   <tr>
                     <th class="col-sr">Sr No</th>
                     <th class="col-details">Task details</th>
+                    <th class="col-status">Source</th>
                     <th class="col-date">Planned date</th>
                     <th class="col-assigned">Assigned to</th>
                     <th class="col-assigned">Verifier</th>
@@ -890,6 +891,48 @@
       </form>
     </div>
   </div>
+
+  <!-- SET EXTENDED TIME (Overdue view only — does not change target_date) -->
+  <div id="overdueExtendModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⏱ Set extended time</h3>
+        <button class="modal-close" id="closeOverdueExtendModal">&times;</button>
+      </div>
+      <form id="overdueExtendForm" class="modal-body">
+        <p class="view-sub" style="margin:0 0 14px">This only affects the Overdue Tasks view — the employee and other views still show the original planned date.</p>
+        <div class="field">
+          <label for="overdue-extend-date">New time the employee asked for <span class="req">*</span></label>
+          <input id="overdue-extend-date" type="datetime-local" required />
+        </div>
+        <div class="field">
+          <label for="overdue-extend-reason">Reason (optional)</label>
+          <textarea id="overdue-extend-reason" rows="3" placeholder="e.g. waiting on material delivery"></textarea>
+        </div>
+        <p id="overdueExtendFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelOverdueExtendModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- OVERDUE TASK DETAIL PANEL (right-side drawer: Today / Pending tabs) -->
+  <div id="overdueDrawerBackdrop" class="drawer-backdrop" hidden>
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <h3>Overdue tasks</h3>
+        <button class="modal-close" id="closeOverdueDrawer">&times;</button>
+      </div>
+      <div class="drawer-tabs">
+        <button type="button" class="drawer-tab active" id="overdueTabToday">Today <span class="tab-count" id="overdueTabTodayCount">0</span></button>
+        <button type="button" class="drawer-tab" id="overdueTabPending">Pending <span class="tab-count" id="overdueTabPendingCount">0</span></button>
+      </div>
+      <div class="drawer-body" id="overdueDrawerBody"></div>
+    </div>
+  </div>
+
 
   <!-- Reassign Modal -->
   <div id="reassignModal" class="modal-backdrop" hidden>
