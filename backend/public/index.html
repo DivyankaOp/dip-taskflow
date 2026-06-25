@@ -226,7 +226,6 @@
                     <th class="col-details">Task details</th>
                     <th class="col-status">Source</th>
                     <th class="col-date">Planned date</th>
-                    <th class="col-sr" style="text-align:center">Days Overdue</th>
                     <th class="col-assigned">Assigned to</th>
                     <th class="col-assigned">Verifier</th>
                     <th class="col-priority">Priority</th>
@@ -577,6 +576,128 @@
             </div>
           </div>
           <div id="reportPrintArea"></div>
+        </section>
+
+        <!-- DRAWINGS — ADD -->
+        <section id="view-drawings-add" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">🖊️ Add Drawing</h2>
+            <p class="view-sub">Fill in the drawing details below and submit.</p>
+          </div>
+          <div class="drawing-form-card">
+            <p id="drawingFormMsg" class="form-error" hidden></p>
+            <form id="drawingForm" autocomplete="off">
+
+              <div class="form-section-label">Drawing Details</div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="drw-category">Drawing Category <span class="req">*</span></label>
+                  <select id="drw-category" required>
+                    <option value="">-- Select Category --</option>
+                    <option>Layout</option>
+                    <option>Presentation</option>
+                    <option>Architectural</option>
+                    <option>Structural</option>
+                    <option>MEP</option>
+                    <option>Others</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="drw-sub1">Sub Category 1</label>
+                  <input id="drw-sub1" type="text" placeholder="e.g. Floor Plans" />
+                </div>
+                <div class="field">
+                  <label for="drw-sub2">Sub Category 2</label>
+                  <input id="drw-sub2" type="text" placeholder="e.g. Ground Floor" />
+                </div>
+                <div class="field">
+                  <label for="drw-sub3">Sub Category 3</label>
+                  <input id="drw-sub3" type="text" placeholder="e.g. Toilet Layout" />
+                </div>
+              </div>
+
+              <div class="form-section-label">Project Info</div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="drw-project">Project Name <span class="req">*</span></label>
+                  <select id="drw-project" required>
+                    <option value="">-- Select Project --</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="drw-date">Drawing Date <span class="req">*</span></label>
+                  <input id="drw-date" type="date" required />
+                </div>
+                <div class="field">
+                  <label for="drw-head">Head / Reviewer <span class="req">*</span></label>
+                  <select id="drw-head" required>
+                    <option value="">-- Select Head --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-section-label">Additional Info</div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="drw-remarks">Remarks / Notes</label>
+                  <textarea id="drw-remarks" rows="2" placeholder="Any notes about this drawing set…"></textarea>
+                </div>
+                <div class="field">
+                  <label for="drw-files">Upload Drawing File(s)</label>
+                  <input id="drw-files" type="file" multiple accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.zip" />
+                  <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">Supported: PDF, DWG, DXF, Images, ZIP | Multiple files allowed</div>
+                </div>
+                <div class="field" style="max-width:160px">
+                  <label for="drw-revision">Revision No.</label>
+                  <input id="drw-revision" type="text" placeholder="R0" />
+                </div>
+              </div>
+
+              <div class="modal-footer" style="margin-top:20px;padding:0">
+                <button type="button" id="drawingResetBtn" class="ghost-btn-text">Reset</button>
+                <button type="submit" class="primary-btn">💾 Save Drawing</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- DRAWINGS — ALL -->
+        <section id="view-drawings-all" class="view" hidden>
+          <div class="view-header-row">
+            <div class="view-heading" style="margin-bottom:0">
+              <h2 class="view-title">📐 All Drawings <span id="drawingsCount" class="tab-count" style="font-size:0.8rem;vertical-align:middle"></span></h2>
+              <p class="view-sub">Browse, filter and manage all drawing records.</p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <select id="drwFilterProject" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem">
+                <option value="">All Projects</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap" style="margin-top:18px">
+            <table class="data-table" id="drawingsTable">
+              <thead>
+                <tr>
+                  <th class="col-sr">SR</th>
+                  <th>Project</th>
+                  <th>Category</th>
+                  <th>Sub Cat 1</th>
+                  <th>Sub Cat 2</th>
+                  <th>Sub Cat 3</th>
+                  <th class="col-date">Date</th>
+                  <th>Head</th>
+                  <th style="text-align:center">Rev</th>
+                  <th>Remarks</th>
+                  <th style="text-align:center">Preview</th>
+                  <th>Added By</th>
+                  <th class="col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="drawingsTableBody">
+                <tr><td colspan="13" class="empty-state">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
       </main>
