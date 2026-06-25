@@ -381,6 +381,7 @@
                     <th class="perm-col">Add employee</th>
                     <th class="perm-col">Resolve tickets</th>
                     <th class="perm-col">Verify tasks</th>
+                    <th class="perm-col">MIS Executive</th>
                   </tr>
                 </thead>
                 <tbody id="permissionsTableBody"></tbody>
@@ -782,7 +783,7 @@
         <button class="modal-close" id="closeTicketModal">&times;</button>
       </div>
       <form id="ticketForm" class="modal-body">
-        <!-- Shown only when ticket is linked to a task -->
+        <!-- Shown only when raised from a task -->
         <div id="ticketTaskBanner" class="ticket-task-banner" hidden>
           <span class="ticket-task-banner-icon">🔗</span>
           <span>Linked to task: <strong id="ticketTaskBannerText"></strong></span>
@@ -793,15 +794,19 @@
             <option value="">Select category</option>
             <option value="Technical">🔧 Technical issue</option>
             <option value="Task">📋 Task related</option>
-            <option value="HR">👤 HR / Leave</option>
-            <option value="Access">🔑 Access / Login</option>
-            <option value="Payment">💰 Payment / Salary</option>
+            <option value="Access">🔑 Access / Login issue</option>
             <option value="Other">📌 Other</option>
           </select>
         </div>
         <div class="field">
           <label for="ticket-description">Describe the issue <span class="req">*</span></label>
           <textarea id="ticket-description" rows="4" placeholder="Explain your issue in detail..." required></textarea>
+        </div>
+        <!-- Screenshot / screen recording — shown only for Technical or Access -->
+        <div id="ticketMediaFields" class="field" hidden>
+          <label>Screenshot or screen recording <span class="optional">(optional)</span></label>
+          <p class="form-note">Attach a screenshot (PNG/JPG) or a short screen recording (MP4/WebM) to help us understand the issue.</p>
+          <input id="ticket-media" type="file" accept="image/png,image/jpeg,image/jpg,video/mp4,video/webm" />
         </div>
         <p id="ticketFormMsg" class="form-error" hidden></p>
         <div class="modal-actions">
@@ -812,7 +817,7 @@
     </div>
   </div>
 
-  <!-- Solution Modal (admin → write solution for a ticket) -->
+  <!-- Solution Modal (admin/resolver → write solution) -->
   <div id="solutionModal" class="modal-backdrop" hidden>
     <div class="modal">
       <div class="modal-header">
