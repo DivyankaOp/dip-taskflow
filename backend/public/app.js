@@ -410,7 +410,21 @@ function buildNav() {
   supportLabel.className = 'nav-section-label';
   supportLabel.textContent = state.user.is_mis_executive ? 'MIS — Ticket Tracking' : 'Support';
   els.navList.appendChild(supportLabel);
-  els.navList.appendChild(makeNavButton('tickets', '🎫 Tickets'));
+  if (isAdmin || state.user.can_resolve_tickets || state.user.is_mis_executive) {
+    els.navList.appendChild(makeNavButton('tickets-open', '🟠 Open Tickets'));
+    els.navList.appendChild(makeNavButton('tickets-resolved', '✅ Resolved Tickets'));
+  } else {
+    els.navList.appendChild(makeNavButton('tickets', '🎫 Tickets'));
+  }
+
+  // Drawings — admin only
+  if (isAdmin) {
+    const drawLabel = document.createElement('div');
+    drawLabel.className = 'nav-section-label'; drawLabel.textContent = 'Drawings';
+    els.navList.appendChild(drawLabel);
+    els.navList.appendChild(makeNavButton('drawings-add', '➕ Add Drawing'));
+    els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
+  }
 }
 
 function makeNavButton(key, label) {
@@ -436,12 +450,16 @@ function switchView(viewKey) {
   if (viewKey === 'permissions')   loadPermissions();
   if (viewKey === 'verifications') loadVerifications();
   if (viewKey === 'tickets')       loadTickets();
+  if (viewKey === 'tickets-open')     loadTicketsFiltered('Open');
+  if (viewKey === 'tickets-resolved') loadTicketsFiltered('Resolved');
   if (viewKey === 'corrections')   loadCorrections();
   if (viewKey === 'updations')     loadUpdations();
   if (viewKey === 'recurring')     loadRecurringView();
   if (viewKey === 'reports')       initReportsView();
   if (viewKey === 'applyleave')      loadMyLeaves();
   if (viewKey === 'leaveapprovals')  loadLeaveApprovals();
+  if (viewKey === 'drawings-add')  renderDrawingAddView();
+  if (viewKey === 'drawings-all')  loadAllDrawings();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -690,7 +708,7 @@ async function loadOverdueTasks() {
 // detail drawer for that task.
 function renderOverdueTasksTable(tbody, tasks) {
   if (!tasks || tasks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">🎉</span>No overdue tasks</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
@@ -715,22 +733,15 @@ function renderOverdueTasksTable(tbody, tasks) {
       ? `<span class="source-badge source-verification">⏳ Verification</span>`
       : `<span class="source-badge source-assignment">📋 Assignment</span>`;
 
-    // Planned date
+    // Planned date (how overdue, shown in red) + extension note if active
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
     const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
     tdDate.innerHTML = `
       <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
+      <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue <= 0 ? 'Overdue today' : `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue 🔴`}</div>
       ${isOverdueExtensionActive(task) ? `<div style="color:var(--emerald);font-size:0.75rem;margin-top:2px">⏱ Extended to ${fmtDate(task.overdue_extended_until)}</div>` : ''}
     `;
-
-    // Days Overdue — separate column
-    const tdDaysOverdue = document.createElement('td');
-    tdDaysOverdue.style.whiteSpace = 'nowrap';
-    tdDaysOverdue.style.textAlign = 'center';
-    tdDaysOverdue.innerHTML = daysOverdue <= 0
-      ? `<span style="color:#d33;font-weight:700;font-size:0.85rem">Today</span>`
-      : `<span style="color:#d33;font-weight:700;font-size:1rem">${daysOverdue}</span><br><span style="color:#d33;font-size:0.72rem">day${daysOverdue !== 1 ? 's' : ''}</span>`;
 
     // Assigned to
     const tdAssigned = document.createElement('td');
@@ -762,7 +773,7 @@ function renderOverdueTasksTable(tbody, tasks) {
     tdActions.addEventListener('click', (e) => e.stopPropagation()); // don't open drawer when using the menu
     tdActions.appendChild(buildOverdueMenuElement(task));
 
-    tr.append(tdSr, tdDetails, tdSource, tdDate, tdDaysOverdue, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
+    tr.append(tdSr, tdDetails, tdSource, tdDate, tdAssigned, tdVerifier, tdPriority, tdStatus, tdActions);
     tr.addEventListener('click', () => openOverdueDrawer(task.id));
     tbody.appendChild(tr);
   });
@@ -1490,7 +1501,6 @@ function renderVerificationsTable(tbody, tasks) {
         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
       }));
       tdActions.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-      tdActions.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     }
 
     if (activeVerifications.has(task.id)) {
@@ -1769,9 +1779,23 @@ async function loadTickets() {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
-function renderTicketsList(tickets) {
+async function loadTicketsFiltered(statusFilter) {
+  // tickets-open and tickets-resolved share the same #ticketsList container
+  // (both views point to view-tickets in HTML)
+  els.ticketsList.innerHTML = `<div class="empty-state">Loading ${statusFilter.toLowerCase()} tickets…</div>`;
+  try {
+    const tickets = await api('/tickets');
+    const filtered = tickets.filter(t => t.status === statusFilter);
+    renderTicketsList(filtered, statusFilter);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderTicketsList(tickets, statusFilter) {
   if (!tickets.length) {
-    els.ticketsList.innerHTML = `<div class="empty-state"><span class="emoji">🎫</span>No tickets yet</div>`;
+    const msg = statusFilter === 'Open' ? '🟠 No open tickets right now'
+              : statusFilter === 'Resolved' ? '✅ No resolved tickets yet'
+              : '🎫 No tickets yet';
+    els.ticketsList.innerHTML = `<div class="empty-state"><span class="emoji">🎫</span>${msg}</div>`;
     return;
   }
   els.ticketsList.innerHTML = '';
@@ -1782,10 +1806,7 @@ function renderTicketsList(tickets) {
 
   const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
 
-  const openTickets = tickets.filter(t => t.status === 'Open');
-  const resolvedTickets = tickets.filter(t => t.status !== 'Open');
-
-  function buildCard(ticket) {
+  tickets.forEach((ticket) => {
     const card = document.createElement('div');
     card.className = 'ticket-card';
 
@@ -1802,7 +1823,7 @@ function renderTicketsList(tickets) {
 
       ${ticket.task ? `
         <div class="ticket-task-ref">
-          🔗 Task: <em>${escapeHtml(ticket.task.description.slice(0,80))}${ticket.task.description.length > 80 ? '…' : ''}</em>
+          🔗 ${ticket.task.project?.name ? `<strong>${escapeHtml(ticket.task.project.name)}</strong> · ` : ''}Task: <em>${escapeHtml(ticket.task.description.slice(0,80))}${ticket.task.description.length > 80 ? '…' : ''}</em>
         </div>` : ''}
 
       <p class="ticket-desc">${escapeHtml(ticket.description)}</p>
@@ -1830,6 +1851,7 @@ function renderTicketsList(tickets) {
 
     const actionsCell = card.querySelector('.row-actions');
 
+    // Admin/resolver: show Solution button on open tickets
     if (canSolve && ticket.status === 'Open') {
       const solveBtn = document.createElement('button');
       solveBtn.className = 'action-btn action-verify';
@@ -1838,27 +1860,8 @@ function renderTicketsList(tickets) {
       actionsCell.appendChild(solveBtn);
     }
 
-    return card;
-  }
-
-  // ── Open tickets section ──
-  if (openTickets.length) {
-    const openHeader = document.createElement('div');
-    openHeader.className = 'ticket-section-header';
-    openHeader.innerHTML = `<span class="ticket-section-title">🟠 Open Tickets</span><span class="tab-count" style="background:var(--amber,#f59e0b);color:#fff">${openTickets.length}</span>`;
-    els.ticketsList.appendChild(openHeader);
-    openTickets.forEach(t => els.ticketsList.appendChild(buildCard(t)));
-  }
-
-  // ── Resolved tickets section ──
-  if (resolvedTickets.length) {
-    const resolvedHeader = document.createElement('div');
-    resolvedHeader.className = 'ticket-section-header';
-    resolvedHeader.style.marginTop = openTickets.length ? '28px' : '0';
-    resolvedHeader.innerHTML = `<span class="ticket-section-title">✅ Resolved Tickets</span><span class="tab-count" style="background:var(--emerald,#10b981);color:#fff">${resolvedTickets.length}</span>`;
-    els.ticketsList.appendChild(resolvedHeader);
-    resolvedTickets.forEach(t => els.ticketsList.appendChild(buildCard(t)));
-  }
+    els.ticketsList.appendChild(card);
+  });
 }
 
 // ─── Leave: apply (everyone) ───────────────────────────────────────────────────
@@ -3336,3 +3339,193 @@ function renderReport(data) {
 function exportReportPdf() {
   window.print();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── DRAWINGS MODULE ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+const DRAWING_CATEGORIES = ['Layout','Presentation','Architectural','Structural','MEP','Others'];
+
+// ─── Add Drawing View ────────────────────────────────────────────────
+function renderDrawingAddView() {
+  const view = document.getElementById('view-drawings-add');
+  if (!view) return;
+
+  // Load projects for dropdown
+  api('/master/projects').then(projects => {
+    const projSel = view.querySelector('#drw-project');
+    if (projSel) {
+      projSel.innerHTML = '<option value="">-- Select Project --</option>';
+      (projects || []).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        projSel.appendChild(opt);
+      });
+    }
+  }).catch(() => {});
+
+  // Load verifiers/heads for dropdown
+  api('/master/verifiers').then(users => {
+    const headSel = view.querySelector('#drw-head');
+    if (headSel) {
+      headSel.innerHTML = '<option value="">-- Select Head --</option>';
+      (users || []).forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id; opt.textContent = u.full_name;
+        headSel.appendChild(opt);
+      });
+    }
+  }).catch(() => {});
+
+  // Category change → update subcategory
+  const catSel = view.querySelector('#drw-category');
+  const sub1Sel = view.querySelector('#drw-sub1');
+  if (catSel && sub1Sel) {
+    catSel.addEventListener('change', () => {
+      sub1Sel.innerHTML = '<option value="">-- Select Sub Category --</option>';
+    });
+  }
+
+  const form = view.querySelector('#drawingForm');
+  const msgEl = view.querySelector('#drawingFormMsg');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msgEl.hidden = true;
+
+    const project_id = view.querySelector('#drw-project').value;
+    const category   = view.querySelector('#drw-category').value;
+    const sub_cat_1  = view.querySelector('#drw-sub1').value;
+    const sub_cat_2  = view.querySelector('#drw-sub2').value;
+    const sub_cat_3  = view.querySelector('#drw-sub3').value;
+    const drawing_date = view.querySelector('#drw-date').value;
+    const head_id    = view.querySelector('#drw-head').value;
+    const revision   = view.querySelector('#drw-revision').value || 'R0';
+    const remarks    = view.querySelector('#drw-remarks').value;
+    const fileInput  = view.querySelector('#drw-files');
+
+    if (!project_id || !category || !drawing_date || !head_id) {
+      msgEl.textContent = 'Please fill in all required fields';
+      msgEl.hidden = false;
+      return;
+    }
+
+    try {
+      const fd = new FormData();
+      fd.append('project_id', project_id);
+      fd.append('category', category);
+      fd.append('sub_cat_1', sub_cat_1);
+      fd.append('sub_cat_2', sub_cat_2);
+      fd.append('sub_cat_3', sub_cat_3);
+      fd.append('drawing_date', drawing_date);
+      fd.append('head_id', head_id);
+      fd.append('revision', revision);
+      fd.append('remarks', remarks);
+      if (fileInput.files.length > 0) {
+        Array.from(fileInput.files).forEach(f => fd.append('files', f));
+      }
+
+      await api('/drawings', { method: 'POST', body: fd, isForm: true });
+      showToast('Drawing saved ✅', 'success');
+      form.reset();
+    } catch (err) {
+      msgEl.textContent = err.message || 'Failed to save drawing';
+      msgEl.hidden = false;
+    }
+  });
+
+  // Reset button
+  const resetBtn = view.querySelector('#drawingResetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => { form.reset(); msgEl.hidden = true; });
+}
+
+// ─── All Drawings View ───────────────────────────────────────────────
+let allDrawingsCache = [];
+
+async function loadAllDrawings() {
+  const view = document.getElementById('view-drawings-all');
+  if (!view) return;
+  const tbody = view.querySelector('#drawingsTableBody');
+  tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Loading drawings…</td></tr>`;
+
+  try {
+    allDrawingsCache = await api('/drawings');
+    // Populate project filter
+    const filterSel = view.querySelector('#drwFilterProject');
+    if (filterSel) {
+      const projects = [...new Map(allDrawingsCache.map(d => [d.project?.id, d.project?.name])).entries()]
+        .filter(([id]) => id).sort((a,b) => a[1].localeCompare(b[1]));
+      filterSel.innerHTML = '<option value="">All Projects</option>';
+      projects.forEach(([id, name]) => {
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = name;
+        filterSel.appendChild(opt);
+      });
+    }
+    renderDrawingsTable(allDrawingsCache);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Failed to load drawings</td></tr>`;
+    showToast(err.message, 'error');
+  }
+}
+
+function renderDrawingsTable(drawings) {
+  const view = document.getElementById('view-drawings-all');
+  const tbody = view.querySelector('#drawingsTableBody');
+  const countEl = view.querySelector('#drawingsCount');
+  if (countEl) countEl.textContent = `${drawings.length} total`;
+
+  if (!drawings.length) {
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><span class="emoji">📐</span>No drawings found</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  drawings.forEach((d, i) => {
+    const tr = document.createElement('tr');
+    const fileUrls = Array.isArray(d.file_urls) ? d.file_urls : (d.file_url ? [d.file_url] : []);
+    const previewHtml = fileUrls.length
+      ? fileUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" class="media-link drw-view-btn">View</a>`).join(' ')
+      : `<span class="media-none">—</span>`;
+
+    tr.innerHTML = `
+      <td><span class="sr-number">${i+1}</span></td>
+      <td><strong style="font-weight:600">${escapeHtml(d.project?.name ?? '—')}</strong></td>
+      <td><span class="ticket-category-chip">${escapeHtml(d.category ?? '—')}</span></td>
+      <td>${escapeHtml(d.sub_cat_1 || '—')}</td>
+      <td>${escapeHtml(d.sub_cat_2 || '—')}</td>
+      <td>${escapeHtml(d.sub_cat_3 || '—')}</td>
+      <td style="white-space:nowrap">${d.drawing_date ? fmtDate(d.drawing_date) : '—'}</td>
+      <td>${escapeHtml(d.head_user?.full_name ?? '—')}</td>
+      <td><span class="pill pill-Pending" style="font-size:0.72rem;padding:2px 8px">${escapeHtml(d.revision ?? 'R0')}</span></td>
+      <td style="font-size:0.8rem">${escapeHtml(d.remarks || '—')}</td>
+      <td style="text-align:center">${previewHtml}</td>
+      <td>${escapeHtml(d.added_by_user?.full_name ?? '—')}</td>
+      <td class="row-actions"><button class="action-btn action-delete drw-delete-btn" data-id="${d.id}">🗑 Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Delete listeners
+  tbody.querySelectorAll('.drw-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this drawing?')) return;
+      try {
+        await api(`/drawings/${btn.dataset.id}`, { method: 'DELETE' });
+        showToast('Drawing deleted', 'success');
+        loadAllDrawings();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+}
+
+// Filter by project
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'drwFilterProject') {
+    const val = e.target.value;
+    const filtered = val
+      ? allDrawingsCache.filter(d => String(d.project?.id) === val)
+      : allDrawingsCache;
+    renderDrawingsTable(filtered);
+  }
+});
