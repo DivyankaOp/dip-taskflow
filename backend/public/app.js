@@ -380,6 +380,7 @@ function buildNav() {
       els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
       els.navList.appendChild(makeNavButton('permissions', '🔐 Permissions'));
       els.navList.appendChild(makeNavButton('reports', '📊 Reports'));
+      els.navList.appendChild(makeNavButton('daily-report', '📋 Daily Report'));
     }
   }
 
@@ -410,12 +411,8 @@ function buildNav() {
   supportLabel.className = 'nav-section-label';
   supportLabel.textContent = state.user.is_mis_executive ? 'MIS — Ticket Tracking' : 'Support';
   els.navList.appendChild(supportLabel);
-  if (isAdmin || state.user.can_resolve_tickets || state.user.is_mis_executive) {
-    els.navList.appendChild(makeNavButton('tickets-open', '🟠 Open Tickets'));
-    els.navList.appendChild(makeNavButton('tickets-resolved', '✅ Resolved Tickets'));
-  } else {
-    els.navList.appendChild(makeNavButton('tickets', '🎫 Tickets'));
-  }
+  els.navList.appendChild(makeNavButton('tickets-open', '🟠 Open Tickets'));
+  els.navList.appendChild(makeNavButton('tickets-resolved', '✅ Resolved Tickets'));
 
   // Drawings — admin only
   if (isAdmin) {
@@ -424,14 +421,6 @@ function buildNav() {
     els.navList.appendChild(drawLabel);
     els.navList.appendChild(makeNavButton('drawings-add', '➕ Add Drawing'));
     els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
-  }
-
-  // Daily Report — admin only
-  if (isAdmin) {
-    const rptLabel = document.createElement('div');
-    rptLabel.className = 'nav-section-label'; rptLabel.textContent = 'Reports';
-    els.navList.appendChild(rptLabel);
-    els.navList.appendChild(makeNavButton('daily-report', '📋 Daily Report'));
   }
 }
 
@@ -1049,6 +1038,12 @@ function buildCardMenuItems(task, { showAssignee }) {
   const isAdminManaging = showAssignee && state.user.role === 'admin';
   const items = [];
 
+  // Employee hasn't accepted/rejected this task yet — no extra options until
+  // they make that call via the primary Accept/Reject buttons.
+  if (!isAdminManaging && task.status === 'Pending') {
+    return items;
+  }
+
   if (isAdminManaging) {
     if (task.status !== 'Completed') {
       items.push({ label: '✅ Mark as done', onClick: () => updateStatus(task.id, 'Completed') });
@@ -1097,14 +1092,16 @@ function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
 }
 
 function buildCardMenuElement(task, { showAssignee }) {
+  const items = buildCardMenuItems(task, { showAssignee });
   const wrap = document.createElement('div'); wrap.className = 'card-menu';
+  if (items.length === 0) return wrap; // nothing to show — keep an empty wrapper for layout
   const menuBtn = document.createElement('button');
   menuBtn.type = 'button'; menuBtn.className = 'card-menu-btn';
   menuBtn.setAttribute('aria-label', 'More options'); menuBtn.textContent = '⋮';
   const menuList = document.createElement('div');
   menuList.className = 'card-menu-list'; menuList.hidden = true;
 
-  buildCardMenuItems(task, { showAssignee }).forEach((item) => {
+  items.forEach((item) => {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'card-menu-item'; btn.textContent = item.label;
     btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
@@ -1732,8 +1729,11 @@ function renderUpdationsList(tasks) {
       </div>
       <div class="task-card-footer">
         <span class="pill pill-InProgress">${task.status}</span>
+        <div class="task-actions" id="upd-actions-${task.id}"></div>
       </div>
     `;
+    const actionsEl = card.querySelector(`#upd-actions-${task.id}`);
+    actionsEl.appendChild(makeActionBtn('action-start', '🔄 Resend for Verification', () => openResendVerifyModal(task)));
     listEl.appendChild(card);
   });
 }
@@ -3606,7 +3606,7 @@ async function generateDailyReport() {
   body.innerHTML = `<div class="empty-state">Generating report…</div>`;
 
   try {
-    const allTasks = await api('/tasks?all=true');
+    const allTasks = await api('/tasks/all');
     const today = new Date(); today.setHours(0,0,0,0);
     const rDate = new Date(reportDate); rDate.setHours(0,0,0,0);
     const rDateEnd = new Date(rDate); rDateEnd.setDate(rDateEnd.getDate() + 1);
