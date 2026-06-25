@@ -425,6 +425,14 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('drawings-add', '➕ Add Drawing'));
     els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
   }
+
+  // Daily Report — admin only
+  if (isAdmin) {
+    const rptLabel = document.createElement('div');
+    rptLabel.className = 'nav-section-label'; rptLabel.textContent = 'Reports';
+    els.navList.appendChild(rptLabel);
+    els.navList.appendChild(makeNavButton('daily-report', '📋 Daily Report'));
+  }
 }
 
 function makeNavButton(key, label) {
@@ -437,7 +445,12 @@ function makeNavButton(key, label) {
 function switchView(viewKey) {
   state.activeView = viewKey;
   document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
-  document.getElementById(`view-${viewKey}`).hidden = false;
+
+  // tickets-open and tickets-resolved share the same view-tickets section
+  const htmlKey = (viewKey === 'tickets-open' || viewKey === 'tickets-resolved') ? 'tickets' : viewKey;
+  const viewEl = document.getElementById(`view-${htmlKey}`);
+  if (viewEl) viewEl.hidden = false;
+
   document.querySelectorAll('.nav-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === viewKey);
   });
@@ -460,6 +473,7 @@ function switchView(viewKey) {
   if (viewKey === 'leaveapprovals')  loadLeaveApprovals();
   if (viewKey === 'drawings-add')  renderDrawingAddView();
   if (viewKey === 'drawings-all')  loadAllDrawings();
+  if (viewKey === 'daily-report')  loadDailyReport();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
@@ -1772,6 +1786,10 @@ document.getElementById('submitSolutionBtn').addEventListener('click', async () 
 
 // ─── Load & Render ────────────────────────────────────────────────────────────
 async function loadTickets() {
+  const titleEl = document.getElementById('ticketsViewTitle');
+  const subEl   = document.getElementById('ticketsViewSub');
+  if (titleEl) titleEl.textContent = '🎫 Tickets';
+  if (subEl)   subEl.textContent   = 'Raise and track support issues.';
   els.ticketsList.innerHTML = '<div class="empty-state">Loading tickets…</div>';
   try {
     const tickets = await api('/tickets');
@@ -1780,8 +1798,14 @@ async function loadTickets() {
 }
 
 async function loadTicketsFiltered(statusFilter) {
-  // tickets-open and tickets-resolved share the same #ticketsList container
-  // (both views point to view-tickets in HTML)
+  // Update view heading dynamically
+  const titleEl = document.getElementById('ticketsViewTitle');
+  const subEl   = document.getElementById('ticketsViewSub');
+  if (titleEl) titleEl.textContent = statusFilter === 'Open' ? '🟠 Open Tickets' : '✅ Resolved Tickets';
+  if (subEl)   subEl.textContent   = statusFilter === 'Open'
+    ? 'All open tickets pending resolution.'
+    : 'All resolved / closed tickets.';
+
   els.ticketsList.innerHTML = `<div class="empty-state">Loading ${statusFilter.toLowerCase()} tickets…</div>`;
   try {
     const tickets = await api('/tickets');
@@ -3529,3 +3553,291 @@ document.addEventListener('change', (e) => {
     renderDrawingsTable(filtered);
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── DAILY REPORT MODULE ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function loadDailyReport() {
+  const dateInput = document.getElementById('drptDate');
+  const genBtn    = document.getElementById('drptGenBtn');
+  const dlBtn     = document.getElementById('drptDownloadBtn');
+  const body      = document.getElementById('drptBody');
+  const subtitle  = document.getElementById('drptSubtitle');
+
+  // Default: yesterday
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().slice(0, 10);
+  if (dateInput && !dateInput._drptInit) {
+    dateInput.value = yStr;
+    dateInput._drptInit = true;
+  }
+
+  // Generate on button click
+  if (genBtn && !genBtn._drptBound) {
+    genBtn._drptBound = true;
+    genBtn.addEventListener('click', () => generateDailyReport());
+    // Also generate on date change
+    dateInput.addEventListener('change', () => generateDailyReport());
+    // Auto-generate on first load
+    generateDailyReport();
+  }
+
+  if (dlBtn && !dlBtn._drptBound) {
+    dlBtn._drptBound = true;
+    dlBtn.addEventListener('click', () => downloadDailyReportPdf());
+  }
+}
+
+async function generateDailyReport() {
+  const dateInput = document.getElementById('drptDate');
+  const body      = document.getElementById('drptBody');
+  const subtitle  = document.getElementById('drptSubtitle');
+  const dlBtn     = document.getElementById('drptDownloadBtn');
+
+  const reportDate = dateInput.value;
+  if (!reportDate) return;
+
+  const d = new Date(reportDate);
+  const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
+  if (subtitle) subtitle.textContent = `Report for ${label}`;
+
+  body.innerHTML = `<div class="empty-state">Generating report…</div>`;
+
+  try {
+    const allTasks = await api('/tasks?all=true');
+    const today = new Date(); today.setHours(0,0,0,0);
+    const rDate = new Date(reportDate); rDate.setHours(0,0,0,0);
+    const rDateEnd = new Date(rDate); rDateEnd.setDate(rDateEnd.getDate() + 1);
+
+    // ── categorise tasks ───────────────────────────────────────────
+    const doneTasks      = [];  // completed on report date
+    const pendingTasks   = [];  // not done, deadline <= reportDate
+    const verifyingTasks = [];  // pending verification as of reportDate
+    const overdueTasks   = [];  // target_date < reportDate and not done
+
+    allTasks.forEach(t => {
+      const isDone = t.status === 'Completed' || t.verification_status === 'Verified';
+      const targetD = t.target_date ? new Date(t.target_date) : null;
+      if (targetD) targetD.setHours(0,0,0,0);
+
+      if (isDone) {
+        // Show in done if completed on or before report date
+        doneTasks.push(t);
+        return;
+      }
+      if (t.verification_status === 'Pending Verification') {
+        verifyingTasks.push(t);
+        return;
+      }
+      if (targetD && targetD < rDateEnd) {
+        const days = Math.floor((rDate - targetD) / 86400000);
+        pendingTasks.push({ ...t, _daysLate: Math.max(0, days) });
+        if (days > 0) overdueTasks.push({ ...t, _daysLate: days });
+      }
+    });
+
+    // Sort overdue by days descending
+    overdueTasks.sort((a, b) => b._daysLate - a._daysLate);
+    pendingTasks.sort((a, b) => b._daysLate - a._daysLate);
+
+    body.innerHTML = '';
+
+    // ── Summary cards ──────────────────────────────────────────────
+    const summaryHtml = `
+      <div class="drpt-summary-row">
+        <div class="drpt-stat-card drpt-stat-done">
+          <div class="drpt-stat-num">${doneTasks.length}</div>
+          <div class="drpt-stat-label">✅ Completed</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-pending">
+          <div class="drpt-stat-num">${pendingTasks.length}</div>
+          <div class="drpt-stat-label">⏳ Pending</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-overdue">
+          <div class="drpt-stat-num">${overdueTasks.length}</div>
+          <div class="drpt-stat-label">🔴 Overdue</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-verify">
+          <div class="drpt-stat-num">${verifyingTasks.length}</div>
+          <div class="drpt-stat-label">🔎 Under Verification</div>
+        </div>
+      </div>`;
+    body.insertAdjacentHTML('beforeend', summaryHtml);
+
+    // ── Overdue Tasks table ────────────────────────────────────────
+    if (overdueTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title">🔴 Overdue Tasks</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
+        overdueTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
+          status: t.status,
+          remarks: t._remarks || ''
+        })),
+        true // editable remarks
+      );
+      body.appendChild(tbl);
+    }
+
+    // ── Pending Tasks table ────────────────────────────────────────
+    const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
+    if (pendingNotOverdue.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
+        pendingNotOverdue.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: t.status,
+          remarks: t._remarks || ''
+        })),
+        true
+      );
+      body.appendChild(tbl);
+    }
+
+    // ── Under Verification table ───────────────────────────────────
+    if (verifyingTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
+        verifyingTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          verifier: t.verifier?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
+        })),
+        false
+      );
+      body.appendChild(tbl);
+    }
+
+    // ── Completed Tasks table ──────────────────────────────────────
+    if (doneTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
+        doneTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
+        })),
+        false
+      );
+      body.appendChild(tbl);
+    }
+
+    if (dlBtn) dlBtn.style.display = '';
+
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state">Failed to generate report: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function buildDrptTable(headers, rows, editableRemarks) {
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+
+  const colCount = headers.length;
+  const tbl = document.createElement('table');
+  tbl.className = 'data-table drpt-table';
+
+  // Head
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+  tbl.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">No tasks</td></tr>`;
+  } else {
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      const vals = Object.values(row);
+      vals.forEach((val, idx) => {
+        const td = document.createElement('td');
+        // Last column + editableRemarks → make it an input
+        if (editableRemarks && idx === vals.length - 1) {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = val || '';
+          inp.placeholder = 'Add remark…';
+          inp.className = 'drpt-remark-input';
+          td.appendChild(inp);
+        } else {
+          td.innerHTML = String(val ?? '—');
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  return wrap;
+}
+
+function downloadDailyReportPdf() {
+  const dateInput  = document.getElementById('drptDate');
+  const reportDate = dateInput?.value || 'report';
+  const body       = document.getElementById('drptBody');
+  const subtitle   = document.getElementById('drptSubtitle');
+
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Daily Report – ${reportDate}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; margin: 20px; }
+        h1 { font-size: 18px; text-align: center; margin-bottom: 4px; }
+        .sub { text-align:center; color:#555; margin-bottom: 20px; font-size:12px; }
+        .drpt-summary-row { display:flex; gap:16px; margin-bottom:20px; }
+        .drpt-stat-card { border:1px solid #ddd; border-radius:8px; padding:12px 20px; text-align:center; flex:1; }
+        .drpt-stat-num { font-size:28px; font-weight:700; }
+        .drpt-stat-done { border-color:#10b981; color:#10b981; }
+        .drpt-stat-pending { border-color:#f59e0b; color:#f59e0b; }
+        .drpt-stat-overdue { border-color:#ef4444; color:#ef4444; }
+        .drpt-stat-verify { border-color:#6d28d9; color:#6d28d9; }
+        .drpt-stat-label { font-size:11px; color:#555; margin-top:4px; }
+        .drpt-section-title { font-weight:700; font-size:13px; text-transform:uppercase;
+          letter-spacing:.05em; margin:20px 0 8px; padding-bottom:4px;
+          border-bottom:2px solid #6d28d9; color:#6d28d9; }
+        table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+        th { background:#1e1b4b; color:#fff; padding:7px 10px; text-align:left; font-size:11px; }
+        td { padding:6px 10px; border-bottom:1px solid #e5e7eb; font-size:11px; vertical-align:top; }
+        tr:nth-child(even) td { background:#f9fafb; }
+        .drpt-overdue-badge { background:#fef2f2; color:#dc2626; font-weight:700;
+          padding:2px 8px; border-radius:6px; font-size:10px; }
+        input.drpt-remark-input { border:none; background:transparent; width:100%; font-size:11px; }
+        @media print { body { margin:10px; } }
+      </style>
+    </head>
+    <body>
+      <h1>📋 DIP Projects — Daily Report</h1>
+      <p class="sub">${subtitle?.textContent || reportDate}</p>
+      ${body.innerHTML.replace(/class="drpt-remark-input"/g, 'style="border:none;width:100%;font-size:11px"')}
+      <script>window.onload = () => { window.print(); }<\/script>
+    </body>
+    </html>
+  `);
+  win.document.close();
+}
