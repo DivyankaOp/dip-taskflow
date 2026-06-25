@@ -406,7 +406,8 @@ function buildNav() {
   }
 
   const supportLabel = document.createElement('div');
-  supportLabel.className = 'nav-section-label'; supportLabel.textContent = 'Support';
+  supportLabel.className = 'nav-section-label';
+  supportLabel.textContent = state.user.is_mis_executive ? 'MIS — Ticket Tracking' : 'Support';
   els.navList.appendChild(supportLabel);
   els.navList.appendChild(makeNavButton('tickets', '🎫 Tickets'));
 }
@@ -1530,24 +1531,27 @@ els.reassignForm.addEventListener('submit', async (e) => {
 
 // ─── Tickets ──────────────────────────────────────────────────────────────────
 
-// Category icons/labels map
 const TICKET_CATEGORY_LABELS = {
   'Technical': '🔧 Technical',
   'Task':      '📋 Task related',
-  'HR':        '👤 HR / Leave',
   'Access':    '🔑 Access / Login',
-  'Payment':   '💰 Payment / Salary',
   'Other':     '📌 Other',
   'General':   '📌 General'
 };
+
+// Categories that require screenshot / screen recording
+const TICKET_NEEDS_MEDIA = new Set(['Technical', 'Access']);
 
 function openTicketModal(taskId, taskDescription) {
   state.pendingTaskId = taskId || null;
   els.ticketFormMsg.hidden = true;
   els.ticketDescription.value = '';
   document.getElementById('ticket-category').value = '';
+  document.getElementById('ticketMediaFields').hidden = true;
+  const mediaInput = document.getElementById('ticket-media');
+  if (mediaInput) mediaInput.value = '';
 
-  // Show/hide the linked-task banner
+  // Task banner
   const banner     = document.getElementById('ticketTaskBanner');
   const bannerText = document.getElementById('ticketTaskBannerText');
   if (taskId && taskDescription) {
@@ -1555,14 +1559,24 @@ function openTicketModal(taskId, taskDescription) {
       ? taskDescription.slice(0, 80) + '…'
       : taskDescription;
     banner.hidden = false;
-    // Pre-select Task category when raised from a task
     document.getElementById('ticket-category').value = 'Task';
+    document.getElementById('ticketMediaFields').hidden = true;
   } else {
     banner.hidden = true;
   }
 
   els.ticketModal.hidden = false;
 }
+
+// Show/hide media upload when category changes
+document.getElementById('ticket-category').addEventListener('change', function () {
+  const mediaWrap = document.getElementById('ticketMediaFields');
+  mediaWrap.hidden = !TICKET_NEEDS_MEDIA.has(this.value);
+  if (mediaWrap.hidden) {
+    const mi = document.getElementById('ticket-media');
+    if (mi) mi.value = '';
+  }
+});
 
 els.openRaiseTicket.addEventListener('click', () => openTicketModal(null));
 els.closeTicketModal.addEventListener('click',  () => { els.ticketModal.hidden = true; });
@@ -1571,15 +1585,28 @@ els.cancelTicketModal.addEventListener('click', () => { els.ticketModal.hidden =
 els.ticketForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   els.ticketFormMsg.hidden = true;
+
   const category    = document.getElementById('ticket-category').value;
   const description = els.ticketDescription.value.trim();
   if (!category)    { els.ticketFormMsg.textContent = 'Please select a category'; els.ticketFormMsg.hidden = false; return; }
   if (!description) { els.ticketFormMsg.textContent = 'Please describe the issue'; els.ticketFormMsg.hidden = false; return; }
+
   try {
-    await api('/tickets', {
-      method: 'POST',
-      body: { task_id: state.pendingTaskId, category, description }
-    });
+    const mediaInput = document.getElementById('ticket-media');
+    const hasMedia   = mediaInput && mediaInput.files[0] && TICKET_NEEDS_MEDIA.has(category);
+
+    if (hasMedia) {
+      // Use FormData so the media file goes through the backend (same pattern as task attachments)
+      const formData = new FormData();
+      formData.append('task_id',     state.pendingTaskId || '');
+      formData.append('category',    category);
+      formData.append('description', description);
+      formData.append('media',       mediaInput.files[0]);
+      await api('/tickets', { method: 'POST', body: formData, isForm: true });
+    } else {
+      await api('/tickets', { method: 'POST', body: { task_id: state.pendingTaskId, category, description } });
+    }
+
     showToast('Ticket raised ✅', 'success');
     els.ticketModal.hidden = true;
     if (state.activeView === 'tickets') loadTickets();
@@ -1589,7 +1616,7 @@ els.ticketForm.addEventListener('submit', async (e) => {
   }
 });
 
-// ─── Solution Modal (admin) ───────────────────────────────────────────────────
+// ─── Solution Modal (admin / resolver) ───────────────────────────────────────
 let _solvingTicketId = null;
 
 function openSolutionModal(ticket) {
@@ -1597,21 +1624,22 @@ function openSolutionModal(ticket) {
   document.getElementById('solution-text').value = '';
   document.getElementById('solutionFormMsg').hidden = true;
 
-  // Show a brief summary of the ticket being resolved
   const info = document.getElementById('solutionTicketInfo');
   info.innerHTML = `
     <div class="solution-ticket-summary">
-      <span class="pill ${ticket.status === 'Open' ? 'pill-Pending' : 'pill-Completed'} pill-sm">${ticket.status}</span>
-      <span class="solution-category-tag">${escapeHtml(TICKET_CATEGORY_LABELS[ticket.category] || ticket.category)}</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+        <span class="pill pill-Pending pill-sm">Open</span>
+        <span class="ticket-category-chip">${escapeHtml(TICKET_CATEGORY_LABELS[ticket.category] || ticket.category)}</span>
+      </div>
       <p class="solution-ticket-desc">"${escapeHtml(ticket.description.length > 120 ? ticket.description.slice(0,120)+'…' : ticket.description)}"</p>
       <p class="solution-ticket-meta">
         Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong>
         ${ticket.task ? ` · Task: <em>${escapeHtml(ticket.task.description.slice(0,60))}${ticket.task.description.length > 60 ? '…' : ''}</em>` : ''}
         · ${fmtDate(ticket.created_at)}
       </p>
+      ${ticket.attachment_url ? `<div style="margin-top:6px"><a href="${escapeHtml(ticket.attachment_url)}" target="_blank" class="ghost-btn-text" style="font-size:0.8rem">📎 View attached screenshot/recording</a></div>` : ''}
     </div>
   `;
-
   document.getElementById('solutionModal').hidden = false;
 }
 
@@ -1650,7 +1678,11 @@ function renderTicketsList(tickets) {
   }
   els.ticketsList.innerHTML = '';
 
-  const isAdmin = state.user.role === 'admin' || state.user.can_resolve_tickets;
+  const isMisOrAdmin = state.user.role === 'admin'
+    || !!state.user.can_resolve_tickets
+    || !!state.user.is_mis_executive;
+
+  const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
 
   tickets.forEach((ticket) => {
     const card = document.createElement('div');
@@ -1674,6 +1706,11 @@ function renderTicketsList(tickets) {
 
       <p class="ticket-desc">${escapeHtml(ticket.description)}</p>
 
+      ${ticket.attachment_url ? `
+        <div class="ticket-media-row">
+          <a href="${escapeHtml(ticket.attachment_url)}" target="_blank" class="ticket-media-link">📎 Screenshot / Recording</a>
+        </div>` : ''}
+
       <div class="ticket-meta">
         Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong>
         · ${fmtDate(ticket.created_at)}
@@ -1692,7 +1729,8 @@ function renderTicketsList(tickets) {
 
     const actionsCell = card.querySelector('.row-actions');
 
-    if (isAdmin && ticket.status === 'Open') {
+    // Admin/resolver: show Solution button on open tickets
+    if (canSolve && ticket.status === 'Open') {
       const solveBtn = document.createElement('button');
       solveBtn.className = 'action-btn action-verify';
       solveBtn.textContent = '💡 Solution';
@@ -2098,7 +2136,8 @@ function renderPermissionsTable(employees) {
       ['can_add_site', 'Add site'],
       ['can_add_employee', 'Add employee'],
       ['can_resolve_tickets', 'Resolve tickets'],
-      ['can_verify', 'Verify tasks']
+      ['can_verify', 'Verify tasks'],
+      ['is_mis_executive', 'MIS Executive']
     ];
     flags.forEach(([flag, label]) => {
       const td = document.createElement('td');
