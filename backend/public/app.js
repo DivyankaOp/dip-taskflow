@@ -1919,7 +1919,8 @@ function renderTicketsList(tickets, statusFilter) {
     || !!state.user.can_resolve_tickets
     || !!state.user.is_mis_executive;
 
-  const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
+  //const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
+  const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets || !!state.user.is_mis_executive;
 
   tickets.forEach((ticket) => {
     const card = document.createElement('div');
