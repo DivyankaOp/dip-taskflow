@@ -153,26 +153,38 @@ router.post('/', upload.single('media'), async (req, res) => {
 });
 
 // ─── List tickets ─────────────────────────────────────────────────────────────
-// Admin / can_resolve_tickets / is_mis_executive → sees all
-// Everyone else → sees only their own
+// Admin / can_resolve_tickets → sees all tickets, every category
+// is_mis_executive → sees ONLY Technical / Access category tickets
+// Everyone else → sees only their own raised tickets
 router.get('/', async (req, res) => {
   try {
-    let seeAll = req.user.role === 'admin';
-    if (!seeAll) {
-      const { data: me, error: meErr } = await supabase
+    const isAdmin = req.user.role === 'admin';
+    let me = null;
+
+    if (!isAdmin) {
+      const { data, error: meErr } = await supabase
         .from('users')
         .select('can_resolve_tickets, is_mis_executive')
         .eq('id', req.user.id)
         .maybeSingle();
       if (meErr) throw meErr;
-      seeAll = !!me?.can_resolve_tickets || !!me?.is_mis_executive;
+      me = data;
     }
 
     let query = supabase
       .from('tickets')
       .select(TICKET_SELECT)
       .order('created_at', { ascending: false });
-    if (!seeAll) query = query.eq('raised_by', req.user.id);
+
+    if (isAdmin || me?.can_resolve_tickets) {
+      // admin / general resolver — sees every ticket, no filter
+    } else if (me?.is_mis_executive) {
+      // MIS executive — only the categories they're responsible for
+      query = query.in('category', ['Technical', 'Access']);
+    } else {
+      // everyone else — only the tickets they personally raised
+      query = query.eq('raised_by', req.user.id);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
@@ -183,18 +195,18 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ─── Solve / resolve (admin always; others need can_resolve_tickets flag) ────
+// ─── Solve / resolve (admin always; others need can_resolve_tickets OR is_mis_executive) ────
 router.patch('/:id/solve', async (req, res) => {
   try {
-    // Admins bypass permission check; others need the flag
+    // Admins bypass permission check; others need one of the resolver flags
     if (req.user.role !== 'admin') {
       const { data: me, error: meErr } = await supabase
         .from('users')
-        .select('can_resolve_tickets')
+        .select('can_resolve_tickets, is_mis_executive')
         .eq('id', req.user.id)
         .maybeSingle();
       if (meErr) throw meErr;
-      if (!me?.can_resolve_tickets) {
+      if (!me?.can_resolve_tickets && !me?.is_mis_executive) {
         return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
       }
     }
