@@ -14,9 +14,6 @@ const upload = multer({
 
 const BUCKET = 'task-files';
 
-// Categories that warrant spinning up a task for the MIS executive to chase down.
-const MIS_TASK_CATEGORIES = new Set(['Technical', 'Access']);
-
 async function uploadFile(file, folder) {
   if (!file) return null;
   const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -27,81 +24,6 @@ async function uploadFile(file, folder) {
   if (error) throw error;
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
-}
-
-// Finds (or creates, once) the master-data rows used to file MIS follow-up
-// tasks under, so they show up cleanly in the normal task lists/reports
-// instead of needing nullable FKs.
-async function getOrCreate(table, name) {
-  const { data: existing, error: findErr } = await supabase
-    .from(table).select('id').eq('name', name).maybeSingle();
-  if (findErr) throw findErr;
-  if (existing) return existing.id;
-
-  const { data: created, error: createErr } = await supabase
-    .from(table).insert({ name }).select('id').single();
-  if (createErr) throw createErr;
-  return created.id;
-}
-
-// Auto-creates a follow-up task for the MIS executive when a ticket lands in
-// a Technical / Access category. The task shows up in the MIS executive's
-// normal "My Tasks" view because assigned_to = misUser.id.
-async function createMisFollowUpTask(ticket, raisedByName, raisedById) {
-  // Find the first active MIS executive
-  const { data: misUser, error: misErr } = await supabase
-    .from('users')
-    .select('id, full_name')
-    .eq('is_mis_executive', true)
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (misErr) {
-    console.error('MIS user lookup error:', misErr.message);
-    return null;
-  }
-  if (!misUser) {
-    console.warn('No active MIS executive found — skipping follow-up task creation');
-    return null;
-  }
-
-  // Ensure the required master-data rows exist (creates them once if missing)
-  const [department_id, project_id, task_type_id] = await Promise.all([
-    getOrCreate('departments', 'MIS Support'),
-    getOrCreate('projects',    'Internal Support'),
-    getOrCreate('task_types',  'Ticket Follow-up')
-  ]);
-
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + 1); // due: next day
-
-  const { data: task, error: taskErr } = await supabase
-    .from('tasks')
-    .insert({
-      department_id,
-      project_id,
-      task_type_id,
-      assigned_to:          misUser.id,
-      assigned_by:          raisedById,
-      description:          `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
-      target_date:          targetDate.toISOString().slice(0, 10),
-      priority:             'High',
-      rescheduling_possible: true,
-      status:               'Pending',
-      verification_status:  'Not Submitted'   // ← FIX: was missing, caused silent DB error
-    })
-    .select('id')
-    .single();
-
-  if (taskErr) {
-    console.error('MIS follow-up task insert error:', taskErr.message, taskErr.details, taskErr.hint);
-    throw taskErr;
-  }
-
-  console.log(`✅ MIS follow-up task #${task.id} created for ${misUser.full_name} (ticket #${ticket.id})`);
-  return task.id;
 }
 
 const TICKET_SELECT = `
@@ -150,20 +72,6 @@ router.post('/', upload.single('media'), async (req, res) => {
           .update({ status: 'Ticket Raised' })
           .eq('id', task_id);
       } catch (_) { /* non-critical — ticket is already saved */ }
-    }
-
-    // Technical / Access → auto-create a follow-up task for the MIS executive
-    if (MIS_TASK_CATEGORIES.has(category.trim())) {
-      try {
-        await createMisFollowUpTask(
-          data,
-          req.user.full_name || 'an employee',
-          req.user.id
-        );
-      } catch (misErr) {
-        // Non-critical: log loudly but don't fail the ticket response
-        console.error('MIS follow-up task creation failed:', misErr.message);
-      }
     }
 
     res.status(201).json(data);
