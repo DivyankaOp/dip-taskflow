@@ -1370,3 +1370,145 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   background: var(--amber-lt); color: #78350F;
   border: 1px solid var(--amber-bd);
 }
+/* ================================================================
+   DAILY REPORT — ADD-ON STYLES (append to your existing CSS file)
+   These extend the Daily Report section already in your stylesheet.
+   They give it the same "table on desktop / cards on mobile" pattern
+   already used for Employees, All Tasks, My Tasks, etc.
+   ================================================================ */
+
+/* Mode toggle (Single Date / PMS Range) */
+.drpt-mode-toggle {
+  display: inline-flex;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.drpt-mode-btn {
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--ink-soft);
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: background .15s, color .15s;
+}
+.drpt-mode-btn.drpt-mode-active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Toolbar row above the report (mode toggle + date pickers + buttons) */
+.drpt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.drpt-toolbar input[type="date"] {
+  padding: 8px 11px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 0.83rem;
+  outline: none;
+}
+.drpt-toolbar input[type="date"]:focus { border-color: var(--primary); }
+
+@media (max-width: 768px) {
+  .drpt-toolbar { width: 100%; }
+  .drpt-toolbar > * { flex: 1 1 auto; }
+  .drpt-mode-toggle { width: 100%; }
+  .drpt-mode-btn { flex: 1; }
+}
+
+/* Table wrapper — adds horizontal scroll as a safety net on tablets,
+   but the real mobile fix is the card list below taking over entirely. */
+.drpt-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--sh-xs);
+}
+.drpt-table-wrap .drpt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 640px; /* keeps columns readable when scrolled on tablet */
+}
+.drpt-table-wrap .drpt-table th {
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.drpt-table-wrap .drpt-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--ink-soft);
+  vertical-align: top;
+}
+.drpt-table-wrap .drpt-table tbody tr:nth-child(even) td { background: var(--surface-2); }
+.drpt-table-wrap .drpt-table tbody tr:last-child td { border-bottom: none; }
+
+.drpt-task-project { font-weight: 700; color: var(--ink); display: block; font-size: 0.82rem; }
+.drpt-task-desc { color: var(--ink-soft); font-size: 0.8rem; }
+
+.drpt-delay-done    { color: #059669; font-weight: 700; font-size: 0.78rem; }
+.drpt-delay-verify  { color: #6d28d9; font-weight: 700; font-size: 0.78rem; }
+.drpt-delay-late    { color: #b45309; font-weight: 700; font-size: 0.78rem; }
+.drpt-delay-ontime  { color: var(--muted-lt); font-size: 0.78rem; }
+
+/* ── Mobile card list (shown instead of table under 768px) ── */
+.drpt-card-list { display: flex; flex-direction: column; gap: 12px; }
+.drpt-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  box-shadow: var(--sh-sm);
+  border-left: 4px solid var(--slate);
+}
+.drpt-card.drpt-card-done    { border-left-color: var(--emerald); }
+.drpt-card.drpt-card-late    { border-left-color: var(--rose); }
+.drpt-card.drpt-card-verify  { border-left-color: #6d28d9; }
+
+.drpt-card-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; margin-bottom: 6px;
+}
+.drpt-card-sr {
+  font-family: var(--font-mono); font-size: 0.7rem;
+  color: var(--muted-lt); flex-shrink: 0;
+}
+.drpt-card-project { font-family: var(--font-display); font-weight: 700; font-size: 0.88rem; color: var(--ink); }
+.drpt-card-desc { font-size: 0.82rem; color: var(--ink-soft); margin: 4px 0 10px; line-height: 1.5; }
+
+.drpt-card-meta {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 0.74rem; color: var(--muted);
+  padding-top: 8px; border-top: 1px solid var(--border-soft);
+}
+.drpt-card-meta strong { color: var(--ink-soft); font-weight: 600; }
+
+.drpt-card-remark {
+  margin-top: 8px;
+}
+.drpt-card-remark input {
+  width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.drpt-card-remark input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--surface);
+}
