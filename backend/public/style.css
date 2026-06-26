@@ -236,17 +236,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   letter-spacing: .08em; color: var(--slate);
   padding: 16px 12px 6px;
 }
-.nav-btn {
-  display: flex; align-items: center; gap: 9px; text-align: left; width: 100%;
-  padding: 9px 12px; border-radius: var(--r-sm); border: none; background: none;
-  color: var(--ink-soft); font-weight: 600; font-size: 0.85rem; cursor: pointer;
-  transition: background .13s, color .13s;
-}
-.nav-btn:hover { background: var(--bg); color: var(--ink); }
-.nav-btn.active {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
-  color: #fff; box-shadow: 0 3px 10px -3px rgba(220,105,0,.5);
-}
+.nav-btn-old-placeholder { display: none; } /* merged into nav badge section below */
 .sidebar-overlay {
   position: fixed; inset: var(--topbar-h) 0 0 0;
   background: rgba(15,17,35,.45); z-index: 14; backdrop-filter: blur(2px);
@@ -1241,8 +1231,91 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   color: var(--text, #111);
   transition: border-color .15s;
 }
-.drpt-remark-input:focus {
-  outline: none;
-  border-color: var(--primary, #6d28d9);
-  background: var(--surface, #fff);
+/* ================================================================
+   NAV BADGE (red count bubble)
+   ================================================================ */
+.nav-btn {
+  display: flex; align-items: center; gap: 9px; text-align: left; width: 100%;
+  padding: 9px 12px; border-radius: var(--r-sm); border: none; background: none;
+  color: var(--ink-soft); font-weight: 600; font-size: 0.85rem; cursor: pointer;
+  transition: background .13s, color .13s;
+  justify-content: space-between;
 }
+.nav-btn:hover { background: var(--bg); color: var(--ink); }
+.nav-btn.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dk));
+  color: #fff; box-shadow: 0 3px 10px -3px rgba(220,105,0,.5);
+}
+.nav-btn-label { flex: 1; text-align: left; }
+.nav-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  background: #ef4444; color: #fff;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+  line-height: 1; flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(239,68,68,.4);
+}
+.nav-btn.active .nav-badge {
+  background: rgba(255,255,255,0.25); color: #fff; box-shadow: none;
+}
+
+/* ================================================================
+   DAILY REPORT — PMS style
+   ================================================================ */
+.drpt-pms-header {
+  text-align: center; margin-bottom: 16px; padding: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.drpt-pms-smile { font-size: 2rem; line-height: 1.2; }
+.drpt-pms-title {
+  font-weight: 800; font-size: 1.1rem;
+  color: var(--primary); letter-spacing: .02em;
+}
+.drpt-pms-table thead tr { background: #1e3a5f; }
+.drpt-pms-table thead th { color: #fff; text-align: center; }
+.drpt-pms-table tbody td { vertical-align: top; }
+.drpt-task-cell { max-width: 280px; }
+.drpt-done-badge {
+  display: inline-block; background: #d1fae5; color: #065f46;
+  font-weight: 700; padding: 3px 10px; border-radius: 6px; font-size: 0.78rem;
+}
+.drpt-pending-badge {
+  display: inline-block; background: #fef3c7; color: #92400e;
+  font-weight: 700; padding: 3px 10px; border-radius: 6px; font-size: 0.78rem;
+}
+.drpt-verify-badge {
+  display: inline-block; background: #ede9fe; color: #5b21b6;
+  font-weight: 700; padding: 3px 10px; border-radius: 6px; font-size: 0.78rem;
+}
+
+/* date range / single day mode toggle buttons */
+.drpt-mode-btn {
+  padding: 6px 14px; border-radius: 6px; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--ink-soft); font-size: 0.82rem;
+  font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.drpt-mode-btn.active {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+  box-shadow: 0 2px 8px -2px rgba(220,105,0,.4);
+}
+
+/* ================================================================
+   MOBILE CARDS — task-card improvements for all views
+   ================================================================ */
+@media (max-width: 768px) {
+  .drpt-summary-row {
+    flex-wrap: wrap; gap: 10px;
+  }
+  .drpt-stat-card { min-width: calc(50% - 10px); flex: 1 1 calc(50% - 10px); }
+  .drpt-pms-table, .drpt-table { font-size: 0.78rem; }
+  .drpt-task-cell { max-width: 140px; }
+}
+
+/* ================================================================
+   UPDATION action button colour
+   ================================================================ */
+.action-btn.action-updation {
+  background: #ede9fe; color: #5b21b6; border: 1.5px solid #c4b5fd;
+}
+.action-btn.action-updation:hover { background: #ddd6fe; }
