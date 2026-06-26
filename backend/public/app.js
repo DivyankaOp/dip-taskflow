@@ -13,7 +13,7 @@ const els = {
   userName: document.getElementById('userName'),
   userRoleTag: document.getElementById('userRoleTag'),
   logoutBtn: document.getElementById('logoutBtn'),
-  menuToggle: document.getElementById('menuToggle'),F
+  menuToggle: document.getElementById('menuToggle'),
   sidebar: document.getElementById('sidebar'),
   sidebarOverlay: document.getElementById('sidebarOverlay'),
   navList: document.getElementById('navList'),
