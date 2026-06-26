@@ -13,7 +13,7 @@ const els = {
   userName: document.getElementById('userName'),
   userRoleTag: document.getElementById('userRoleTag'),
   logoutBtn: document.getElementById('logoutBtn'),
-  menuToggle: document.getElementById('menuToggle'),
+  menuToggle: document.getElementById('menuToggle'),F
   sidebar: document.getElementById('sidebar'),
   sidebarOverlay: document.getElementById('sidebarOverlay'),
   navList: document.getElementById('navList'),
@@ -1224,29 +1224,36 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     card.querySelector('.task-card-top').appendChild(buildCardMenuElement(task, { showAssignee }));
   }
   const actionsEl = card.querySelector('.task-actions');
-  if (verificationMode) {
-    // Two-step: "Start Verification" → then Verify or Send for Correction
-    const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
-      actionsEl.innerHTML = '';
-      actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
-        if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
-      }));
-    //   actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-    //   actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
-    // });
-    // actionsEl.appendChild(startBtn);
-    // return card;
-      actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+//   if (verificationMode) {
+//     // Two-step: "Start Verification" → then Verify or Send for Correction
+//     const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+//       actionsEl.innerHTML = '';
+//       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+//         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
+//       }));
+
+//       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+//       if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
+//     }));
+//     actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+//     actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
+//     return card;
+  
+//   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
+//   return card;
+// }
+if (verificationMode) {
+    actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
       if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
     }));
     actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
     actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     return card;
-  
+  }
+
   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
   return card;
 }
-
 function makeActionBtn(cls, label, onClick) {
   const btn = document.createElement('button');
   btn.className = `action-btn ${cls}`; btn.textContent = label;
