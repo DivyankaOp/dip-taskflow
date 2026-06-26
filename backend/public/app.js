@@ -3805,63 +3805,63 @@ async function generateDailyReport() {
     }
 
     // ── Overdue detail ──
-    if (overdueTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔴 Overdue Tasks</div>`);
-      body.appendChild(buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
-        overdueTasks.map((t, i) => ({
-          sr: i + 1, project: t.project?.name ?? '—', task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
-          status: t.status, remarks: t._remarks || ''
-        })), true
-      ));
-    }
+    // if (overdueTasks.length) {
+    //   body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔴 Overdue Tasks</div>`);
+    //   body.appendChild(buildDrptTable(
+    //     ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
+    //     overdueTasks.map((t, i) => ({
+    //       sr: i + 1, project: t.project?.name ?? '—', task: t.description,
+    //       assignee: t.assigned_to_user?.full_name ?? '—',
+    //       target_date: t.target_date ? fmtDate(t.target_date) : '—',
+    //       days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
+    //       status: t.status, remarks: t._remarks || ''
+    //     })), true
+    //   ));
+    // }
 
-    // ── Pending (due today) ──
-    const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
-    if (pendingNotOverdue.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
-      body.appendChild(buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
-        pendingNotOverdue.map((t, i) => ({
-          sr: i + 1, project: t.project?.name ?? '—', task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: t.status, remarks: t._remarks || ''
-        })), true
-      ));
-    }
+    // // ── Pending (due today) ──
+    // const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
+    // if (pendingNotOverdue.length) {
+    //   body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
+    //   body.appendChild(buildDrptTable(
+    //     ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
+    //     pendingNotOverdue.map((t, i) => ({
+    //       sr: i + 1, project: t.project?.name ?? '—', task: t.description,
+    //       assignee: t.assigned_to_user?.full_name ?? '—',
+    //       target_date: t.target_date ? fmtDate(t.target_date) : '—',
+    //       status: t.status, remarks: t._remarks || ''
+    //     })), true
+    //   ));
+    // }
 
-    // ── Under Verification ──
-    if (verifyingTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
-      body.appendChild(buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
-        verifyingTasks.map((t, i) => ({
-          sr: i + 1, project: t.project?.name ?? '—', task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          verifier: t.verifier?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
-        })), false
-      ));
-    }
+    // // ── Under Verification ──
+    // if (verifyingTasks.length) {
+    //   body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
+    //   body.appendChild(buildDrptTable(
+    //     ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
+    //     verifyingTasks.map((t, i) => ({
+    //       sr: i + 1, project: t.project?.name ?? '—', task: t.description,
+    //       assignee: t.assigned_to_user?.full_name ?? '—',
+    //       verifier: t.verifier?.full_name ?? '—',
+    //       target_date: t.target_date ? fmtDate(t.target_date) : '—',
+    //       status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
+    //     })), false
+    //   ));
+    // }
 
-    // ── Completed ──
-    if (doneTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
-      body.appendChild(buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
-        doneTasks.map((t, i) => ({
-          sr: i + 1, project: t.project?.name ?? '—', task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
-        })), false
-      ));
-    }
+    // // ── Completed ──
+    // if (doneTasks.length) {
+    //   body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
+    //   body.appendChild(buildDrptTable(
+    //     ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
+    //     doneTasks.map((t, i) => ({
+    //       sr: i + 1, project: t.project?.name ?? '—', task: t.description,
+    //       assignee: t.assigned_to_user?.full_name ?? '—',
+    //       target_date: t.target_date ? fmtDate(t.target_date) : '—',
+    //       status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
+    //     })), false
+    //   ));
+    // }
 
     if (dlBtn) dlBtn.style.display = '';
   } catch (err) {
