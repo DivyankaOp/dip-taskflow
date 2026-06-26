@@ -1890,7 +1890,9 @@ function renderTicketsList(tickets, statusFilter) {
     || !!state.user.can_resolve_tickets
     || !!state.user.is_mis_executive;
 
-  const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
+  const canSolve = state.user.role === 'admin'
+    || !!state.user.can_resolve_tickets
+    || !!state.user.is_mis_executive;
 
   tickets.forEach((ticket) => {
     const card = document.createElement('div');
@@ -3844,150 +3846,138 @@ async function generateDailyReport() {
   const reportDate = dateInput.value;
   if (!reportDate) return;
 
-  const d = new Date(reportDate);
-  const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
-  if (subtitle) subtitle.textContent = `Report for ${label}`;
+  const rDate    = new Date(reportDate); rDate.setHours(0,0,0,0);
+  const rDateEnd = new Date(rDate); rDateEnd.setHours(23,59,59,999);
+  const now      = new Date();
 
-  body.innerHTML = `<div class="empty-state">Generating report…</div>`;
+  const fmtD = (iso) => iso
+    ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
+  const fromLabel = fmtD(reportDate);
+  if (subtitle) subtitle.textContent = `PMS Report — ${fromLabel}`;
+  body.innerHTML = `<div class="empty-state">⏳ Generating report…</div>`;
+  if (dlBtn) dlBtn.style.display = 'none';
 
   try {
     const allTasks = await api('/tasks/all');
-    const today = new Date(); today.setHours(0,0,0,0);
-    const rDate = new Date(reportDate); rDate.setHours(0,0,0,0);
-    const rDateEnd = new Date(rDate); rDateEnd.setDate(rDateEnd.getDate() + 1);
 
-    // ── categorise tasks ───────────────────────────────────────────
-    const doneTasks      = [];  // completed on report date
-    const pendingTasks   = [];  // not done, deadline <= reportDate
-    const verifyingTasks = [];  // pending verification as of reportDate
-    const overdueTasks   = [];  // target_date < reportDate and not done
-
-    allTasks.forEach(t => {
-      const isDone = t.status === 'Completed' || t.verification_status === 'Verified';
-      const targetD = t.target_date ? new Date(t.target_date) : null;
-      if (targetD) targetD.setHours(0,0,0,0);
-
-      if (isDone) {
-        // Show in done if completed on or before report date
-        doneTasks.push(t);
-        return;
-      }
-      if (t.verification_status === 'Pending Verification') {
-        verifyingTasks.push(t);
-        return;
-      }
-      if (targetD && targetD < rDateEnd) {
-        const days = Math.floor((rDate - targetD) / 86400000);
-        pendingTasks.push({ ...t, _daysLate: Math.max(0, days) });
-        if (days > 0) overdueTasks.push({ ...t, _daysLate: days });
-      }
+    // All tasks whose target_date is on or before the selected date
+    const tasks = allTasks.filter(t => {
+      if (!t.target_date) return false;
+      const d = new Date(t.target_date); d.setHours(0,0,0,0);
+      return d <= rDateEnd;
     });
 
-    // Sort overdue by days descending
-    overdueTasks.sort((a, b) => b._daysLate - a._daysLate);
-    pendingTasks.sort((a, b) => b._daysLate - a._daysLate);
+    // Sort: target_date ascending, then by assignee name
+    tasks.sort((a, b) => {
+      const da = new Date(a.target_date), db = new Date(b.target_date);
+      if (da - db !== 0) return da - db;
+      return (a.assigned_to_user?.full_name ?? '').localeCompare(b.assigned_to_user?.full_name ?? '');
+    });
 
     body.innerHTML = '';
 
-    // ── Summary cards ──────────────────────────────────────────────
-    const summaryHtml = `
-      <div class="drpt-summary-row">
-        <div class="drpt-stat-card drpt-stat-done">
-          <div class="drpt-stat-num">${doneTasks.length}</div>
-          <div class="drpt-stat-label">✅ Completed</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-pending">
-          <div class="drpt-stat-num">${pendingTasks.length}</div>
-          <div class="drpt-stat-label">⏳ Pending</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-overdue">
-          <div class="drpt-stat-num">${overdueTasks.length}</div>
-          <div class="drpt-stat-label">🔴 Overdue</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-verify">
-          <div class="drpt-stat-num">${verifyingTasks.length}</div>
-          <div class="drpt-stat-label">🔎 Under Verification</div>
-        </div>
-      </div>`;
-    body.insertAdjacentHTML('beforeend', summaryHtml);
-
-    // ── Overdue Tasks table ────────────────────────────────────────
-    if (overdueTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title">🔴 Overdue Tasks</div>`);
-      const tbl = buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
-        overdueTasks.map((t, i) => ({
-          sr: i + 1,
-          project: t.project?.name ?? '—',
-          task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
-          status: t.status,
-          remarks: t._remarks || ''
-        })),
-        true // editable remarks
-      );
-      body.appendChild(tbl);
+    if (!tasks.length) {
+      body.innerHTML = `<div class="empty-state">No tasks found for this date</div>`;
+      return;
     }
 
-    // ── Pending Tasks table ────────────────────────────────────────
-    const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
-    if (pendingNotOverdue.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
-      const tbl = buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
-        pendingNotOverdue.map((t, i) => ({
-          sr: i + 1,
-          project: t.project?.name ?? '—',
-          task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: t.status,
-          remarks: t._remarks || ''
-        })),
-        true
-      );
-      body.appendChild(tbl);
-    }
+    // ── PMS flat table — same style as Image 3 ─────────────────────
+    const wrap  = document.createElement('div');
+    wrap.className = 'table-wrap';
 
-    // ── Under Verification table ───────────────────────────────────
-    if (verifyingTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
-      const tbl = buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
-        verifyingTasks.map((t, i) => ({
-          sr: i + 1,
-          project: t.project?.name ?? '—',
-          task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          verifier: t.verifier?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
-        })),
-        false
-      );
-      body.appendChild(tbl);
-    }
+    const tbl   = document.createElement('table');
+    tbl.className = 'data-table drpt-table pms-table';
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.82rem';
 
-    // ── Completed Tasks table ──────────────────────────────────────
-    if (doneTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
-      const tbl = buildDrptTable(
-        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
-        doneTasks.map((t, i) => ({
-          sr: i + 1,
-          project: t.project?.name ?? '—',
-          task: t.description,
-          assignee: t.assigned_to_user?.full_name ?? '—',
-          target_date: t.target_date ? fmtDate(t.target_date) : '—',
-          status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
-        })),
-        false
-      );
-      body.appendChild(tbl);
-    }
+    // Header
+    tbl.innerHTML = `
+      <thead>
+        <tr style="background:#1e1b4b;color:#fff">
+          <th style="padding:8px 10px;text-align:center;width:48px">Sr.no</th>
+          <th style="padding:8px 10px;text-align:center;width:100px">Date</th>
+          <th style="padding:8px 10px;text-align:left">Task</th>
+          <th style="padding:8px 10px;text-align:center;width:130px">Assignee</th>
+          <th style="padding:8px 10px;text-align:center;width:90px">Delay</th>
+          <th style="padding:8px 10px;text-align:left;width:180px">Remarks</th>
+        </tr>
+      </thead>
+    `;
 
+    const tbody = document.createElement('tbody');
+
+    tasks.forEach((t, i) => {
+      const isDone    = t.status === 'Completed' || t.verification_status === 'Verified';
+      const isVerify  = t.verification_status === 'Pending Verification';
+      const targetD   = t.target_date ? new Date(t.target_date) : null;
+      if (targetD) targetD.setHours(0,0,0,0);
+
+      // Delay calculation
+      let daysLate = 0;
+      if (!isDone && targetD && targetD < now) {
+        daysLate = Math.floor((now - targetD) / 86400000);
+      }
+
+      // Delay cell — yellow highlight like Image 3
+      let delayCell, delayBg;
+      if (isDone) {
+        delayCell = `<span style="color:#059669;font-weight:700">DONE</span>`;
+        delayBg   = '#d1fae5';
+      } else if (isVerify) {
+        delayCell = `<span style="color:#6d28d9;font-weight:700">Under Verification</span>`;
+        delayBg   = '#ede9fe';
+      } else if (daysLate > 0) {
+        delayCell = `<span style="font-weight:700;color:#b45309">${daysLate} Days</span>`;
+        delayBg   = '#fef08a'; // yellow like Image 3
+      } else {
+        delayCell = `<span style="color:#6b7280">—</span>`;
+        delayBg   = '';
+      }
+
+      // Remarks: verifier name for verification tasks, else blank editable
+      let remarksContent = '';
+      if (isVerify && t.verifier?.full_name) {
+        remarksContent = `Under Verification\n${t.verifier.full_name}`;
+      }
+
+      // Task label: Project name (bold) + description
+      const projName = t.project?.name ? `<strong>${escapeHtml(t.project.name)}</strong><br>` : '';
+      const taskDesc = escapeHtml(t.description ?? '');
+
+      const tr = document.createElement('tr');
+      tr.style.background = i % 2 === 0 ? '#fff' : '#f9fafb';
+
+      tr.innerHTML = `
+        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb">${i + 1}</td>
+        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;white-space:nowrap">${fmtD(t.target_date)}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb">${projName}${taskDesc}</td>
+        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-weight:600;text-transform:uppercase;font-size:0.75rem">${escapeHtml((t.assigned_to_user?.full_name ?? '—').toUpperCase())}</td>
+        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;background:${delayBg}">${delayCell}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb"></td>
+      `;
+
+      // Editable remarks input in last cell
+      const remarksTd = tr.querySelectorAll('td')[5];
+      if (remarksContent) {
+        remarksTd.style.fontSize = '0.75rem';
+        remarksTd.style.color = '#6d28d9';
+        remarksTd.textContent = remarksContent;
+      } else {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = 'Add remark…';
+        inp.className = 'drpt-remark-input';
+        inp.style.cssText = 'border:none;background:transparent;width:100%;font-size:0.82rem;outline:none';
+        remarksTd.appendChild(inp);
+      }
+
+      tbody.appendChild(tr);
+    });
+
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    body.appendChild(wrap);
     if (dlBtn) dlBtn.style.display = '';
 
   } catch (err) {
@@ -4081,7 +4071,7 @@ function downloadDailyReportPdf() {
       </style>
     </head>
     <body>
-      <h1>📋 DIP Projects — ${_drptMode === 'range' ? 'PMS Range Report' : 'Daily Report'}</h1>
+      <h1>📋 DIP Projects — PMS Report</h1>
       <p class="sub">${subtitle?.textContent || reportDate}</p>
       ${body.innerHTML.replace(/class="drpt-remark-input"/g, 'style="border:none;width:100%;font-size:11px"')}
       <script>window.onload = () => { window.print(); }<\/script>
