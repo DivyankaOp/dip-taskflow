@@ -1,21 +1,18 @@
 const express = require('express');
 const multer  = require('multer');
 const supabase = require('../lib/supabaseClient');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
 
-// 10 MB limit for screenshots / screen recordings
+// 10 MB limit for attachments / voice notes
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
 const BUCKET = 'task-files';
-
-// Categories that warrant spinning up a task for the MIS executive to chase down.
-const MIS_TASK_CATEGORIES = new Set(['Technical', 'Access']);
 
 async function uploadFile(file, folder) {
   if (!file) return null;
@@ -29,197 +26,409 @@ async function uploadFile(file, folder) {
   return data.publicUrl;
 }
 
-// Finds (or creates, once) the master-data rows used to file MIS follow-up
-// tasks under, so they show up cleanly in the normal task lists/reports
-// instead of needing nullable FKs.
-async function getOrCreate(table, name) {
-  const { data: existing, error: findErr } = await supabase
-    .from(table).select('id').eq('name', name).maybeSingle();
-  if (findErr) throw findErr;
-  if (existing) return existing.id;
-
-  const { data: created, error: createErr } = await supabase
-    .from(table).insert({ name }).select('id').single();
-  if (createErr) throw createErr;
-  return created.id;
-}
-
-// Auto-creates a follow-up task for the MIS executive when a ticket lands in
-// a category they need to chase (Technical / Access). Best-effort: failures
-// here must never block the ticket itself from being saved.
-async function createMisFollowUpTask(ticket, raisedByName, raisedById) {
-  const { data: misUser, error: misErr } = await supabase
-    .from('users')
-    .select('id')
-    .eq('is_mis_executive', true)
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (misErr || !misUser) return null; // no MIS executive configured — skip silently
-
-  const [department_id, project_id, task_type_id] = await Promise.all([
-    getOrCreate('departments', 'MIS Support'),
-    getOrCreate('projects', 'Internal Support'),
-    getOrCreate('task_types', 'Ticket Follow-up')
-  ]);
-
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + 1); // default: next day
-
-  const { data: task, error: taskErr } = await supabase
-    .from('tasks')
-    .insert({
-      department_id,
-      project_id,
-      task_type_id,
-      assigned_to: misUser.id,
-      assigned_by: raisedById,            // ← use the caller's user id directly
-      description: `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
-      target_date: targetDate.toISOString().slice(0, 10),
-      priority: 'High',
-      rescheduling_possible: true,
-      status: 'Pending'
-    })
-    .select('id')
-    .single();
-  if (taskErr) throw taskErr;
-  return task.id;
-}
-
-const TICKET_SELECT = `
-  id, category, description, status, attachment_url, solution, solution_at, created_at,
-  task:tasks ( id, description, project:projects ( id, name ) ),
-  raised_by_user:users!tickets_raised_by_fkey ( id, full_name ),
-  solved_by_user:users!tickets_solution_by_fkey ( id, full_name )
+const TASK_SELECT = `
+  id, description, status, priority, target_date, hours_to_complete,
+  rescheduling_possible, attachment_url, voice_note_url,
+  verification_status, status_note, created_at,
+  department:departments ( id, name ),
+  project:projects ( id, name ),
+  task_type:task_types ( id, name ),
+  assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
+  assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
+  verifier:users!tasks_verifier_id_fkey ( id, full_name )
 `;
 
-// ─── Raise a ticket (anyone logged in) ───────────────────────────────────────
-router.post('/', upload.single('media'), async (req, res) => {
-  try {
-    const { task_id, category, description } = req.body || {};
-    if (!description || !description.trim()) {
-      return res.status(400).json({ error: 'Please describe the issue' });
-    }
-    if (!category || !category.trim()) {
-      return res.status(400).json({ error: 'Please select a category' });
-    }
+// ─── Create task (admin only, multipart) ──────────────────────────────────────
+router.post(
+  '/',
+  requireAdmin,
+  upload.fields([{ name: 'attachment', maxCount: 1 }, { name: 'voice_note', maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const {
+        department_id, assigned_to, project_id, task_type_id,
+        description, target_date, priority, rescheduling_possible, hours_to_complete
+      } = req.body || {};
 
-    let attachment_url = null;
-    if (req.file) {
-      attachment_url = await uploadFile(req.file, 'ticket-media');
-    }
-
-    const { data, error } = await supabase
-      .from('tickets')
-      .insert({
-        task_id: task_id || null,
-        raised_by: req.user.id,
-        category: category.trim(),
-        description: description.trim(),
-        attachment_url,
-        status: 'Open'
-      })
-      .select(TICKET_SELECT)
-      .single();
-
-    if (error) throw error;
-
-    // If ticket is linked to a task, update task status to 'Ticket Raised'
-    if (task_id) {
-      try {
-        await supabase
-          .from('tasks')
-          .update({ status: 'Ticket Raised' })
-          .eq('id', task_id);
-      } catch (_) { /* non-critical — ticket is already saved */ }
-    }
-
-    // Technical / Access issues automatically spin up a follow-up task for
-    // the MIS executive so it shows up in their normal task list — non-critical.
-    if (MIS_TASK_CATEGORIES.has(category.trim())) {
-      try {
-        await createMisFollowUpTask(data, req.user.full_name || 'an employee', req.user.id);
-      } catch (misErr) {
-        console.error('MIS follow-up task error:', misErr.message);
+      if (!department_id || !assigned_to || !project_id || !task_type_id || !description || !target_date) {
+        return res.status(400).json({ error: 'Please fill in all required fields' });
       }
-    }
 
-    res.status(201).json(data);
-  } catch (err) {
-    console.error('Raise ticket error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not raise ticket' });
+      const attachmentFile  = req.files?.attachment?.[0]  || null;
+      const voiceNoteFile   = req.files?.voice_note?.[0]  || null;
+
+      const [attachment_url, voice_note_url] = await Promise.all([
+        uploadFile(attachmentFile,  'attachments'),
+        uploadFile(voiceNoteFile,   'voice-notes'),
+      ]);
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert({
+          department_id,
+          assigned_to,
+          assigned_by: req.user.id,
+          project_id,
+          task_type_id,
+          description,
+          target_date,
+          priority: priority || 'Medium',
+          rescheduling_possible: rescheduling_possible === 'true' || rescheduling_possible === true,
+          hours_to_complete: hours_to_complete ? Number(hours_to_complete) : null,
+          attachment_url,
+          voice_note_url,
+          status: 'Pending',
+          verification_status: 'Not Submitted'
+        })
+        .select(TASK_SELECT)
+        .single();
+
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (err) {
+      console.error('Create task error:', err.message);
+      res.status(500).json({ error: err.message || 'Could not create task' });
+    }
   }
-});
+);
 
-// ─── List tickets ─────────────────────────────────────────────────────────────
-// Admin / can_resolve_tickets / is_mis_executive → sees all
-// Everyone else → sees only their own
-router.get('/', async (req, res) => {
+// ─── List all tasks (admin only, with optional filters) ───────────────────────
+router.get('/all', requireAdmin, async (req, res) => {
   try {
-    let seeAll = req.user.role === 'admin';
-    if (!seeAll) {
-      const { data: me, error: meErr } = await supabase
-        .from('users')
-        .select('can_resolve_tickets, is_mis_executive')
-        .eq('id', req.user.id)
-        .maybeSingle();
-      if (meErr) throw meErr;
-      seeAll = !!me?.can_resolve_tickets || !!me?.is_mis_executive;
-    }
-
     let query = supabase
-      .from('tickets')
-      .select(TICKET_SELECT)
+      .from('tasks')
+      .select(TASK_SELECT)
       .order('created_at', { ascending: false });
-    if (!seeAll) query = query.eq('raised_by', req.user.id);
+
+    if (req.query.department_id) query = query.eq('department_id', req.query.department_id);
+    if (req.query.employee_id)   query = query.eq('assigned_to',  req.query.employee_id);
+    if (req.query.status)        query = query.eq('status',       req.query.status);
 
     const { data, error } = await query;
     if (error) throw error;
     res.json(data);
   } catch (err) {
-    console.error('List tickets error:', err.message);
-    res.status(500).json({ error: 'Could not load tickets' });
+    console.error('List all tasks error:', err.message);
+    res.status(500).json({ error: 'Could not load tasks' });
   }
 });
 
-// ─── Solve / resolve (admin always; others need can_resolve_tickets flag) ────
-router.patch('/:id/solve', async (req, res) => {
+// ─── My tasks (logged-in user) ────────────────────────────────────────────────
+router.get('/my', async (req, res) => {
   try {
-    // Admins bypass permission check; others need the flag
-    if (req.user.role !== 'admin') {
-      const { data: me, error: meErr } = await supabase
-        .from('users')
-        .select('can_resolve_tickets')
-        .eq('id', req.user.id)
-        .maybeSingle();
-      if (meErr) throw meErr;
-      if (!me?.can_resolve_tickets) {
-        return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
-      }
-    }
-
-    const { solution } = req.body || {};
-    if (!solution || !solution.trim()) {
-      return res.status(400).json({ error: 'Please provide a solution' });
-    }
-
     const { data, error } = await supabase
-      .from('tickets')
-      .update({
-        status: 'Resolved',
-        solution: solution.trim(),
-        solution_by: req.user.id,
-        solution_at: new Date().toISOString()
-      })
-      .eq('id', req.params.id)
-      .select(TICKET_SELECT)
-      .single();
+      .from('tasks')
+      .select(TASK_SELECT)
+      .eq('assigned_to', req.user.id)
+      .order('created_at', { ascending: false });
+
     if (error) throw error;
     res.json(data);
   } catch (err) {
-    console.error('Solve ticket error:', err.message);
-    res.status(500).json({ error: 'Could not resolve ticket' });
+    console.error('List my tasks error:', err.message);
+    res.status(500).json({ error: 'Could not load your tasks' });
+  }
+});
+
+// ─── Tasks pending verification (verifier view) ───────────────────────────────
+router.get('/verifications', async (req, res) => {
+  try {
+    let query = supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .eq('verification_status', 'Pending Verification')
+      .order('created_at', { ascending: false });
+
+    // Non-admins only see tasks assigned to them to verify
+    if (req.user.role !== 'admin') {
+      query = query.eq('verifier_id', req.user.id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('List verifications error:', err.message);
+    res.status(500).json({ error: 'Could not load verification tasks' });
+  }
+});
+
+// ─── Reports endpoint ─────────────────────────────────────────────────────────
+router.get('/report', requireAdmin, async (req, res) => {
+  try {
+    const { range, from, to, employee_id, department_id } = req.query;
+
+    let query = supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .order('created_at', { ascending: false });
+
+    if (employee_id)   query = query.eq('assigned_to',  employee_id);
+    if (department_id) query = query.eq('department_id', department_id);
+
+    if (range === 'custom' && from && to) {
+      query = query.gte('created_at', from).lte('created_at', to + 'T23:59:59');
+    } else if (range) {
+      const now = new Date();
+      const cutoff = new Date();
+      if (range === 'today') {
+        cutoff.setHours(0, 0, 0, 0);
+      } else if (range === 'week') {
+        cutoff.setDate(now.getDate() - 7);
+      } else if (range === 'month') {
+        cutoff.setDate(now.getDate() - 30);
+      }
+      query = query.gte('created_at', cutoff.toISOString());
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Report error:', err.message);
+    res.status(500).json({ error: 'Could not load report' });
+  }
+});
+
+// ─── Update task status (employee marks in-progress / done) ──────────────────
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, status_note } = req.body || {};
+
+    if (!status) return res.status(400).json({ error: 'Status is required' });
+
+    // Employees can only update their own tasks
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to, status').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+    if (req.user.role !== 'admin' && existing.assigned_to !== req.user.id) {
+      return res.status(403).json({ error: 'You can only update your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status, status_note: status_note || null })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Update task status error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not update task status' });
+  }
+});
+
+// ─── Send for verification ────────────────────────────────────────────────────
+router.patch(
+  '/:id/send-for-verification',
+  upload.array('files', 10),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { verifier_id } = req.body || {};
+
+      if (!verifier_id) return res.status(400).json({ error: 'Please select a verifier' });
+
+      // Upload any proof files
+      const fileUrls = [];
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          const url = await uploadFile(file, 'verification-proof');
+          if (url) fileUrls.push(url);
+        }
+      }
+
+      const updates = {
+        verification_status: 'Pending Verification',
+        verifier_id,
+        status: 'Completed'
+      };
+      if (fileUrls.length > 0) updates.verification_files = fileUrls;
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id)
+        .select(TASK_SELECT)
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err) {
+      console.error('Send for verification error:', err.message);
+      res.status(500).json({ error: err.message || 'Could not send for verification' });
+    }
+  }
+);
+
+// ─── Verify / approve a task ──────────────────────────────────────────────────
+router.patch('/:id/verify', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved } = req.body || {};
+
+    const newVerifStatus = approved ? 'Verified' : 'Rejected';
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        verification_status: newVerifStatus,
+        status: approved ? 'Completed' : 'Rejected'
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Verify task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not verify task' });
+  }
+});
+
+// ─── Send correction (verifier → employee) ────────────────────────────────────
+router.patch(
+  '/:id/send-correction',
+  upload.fields([{ name: 'voice_note', maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { correction_note } = req.body || {};
+
+      const voiceNoteFile = req.files?.voice_note?.[0] || null;
+      const voice_note_url = await uploadFile(voiceNoteFile, 'correction-voice-notes');
+
+      const updates = {
+        verification_status: 'Correction Required',
+        status: 'Pending'
+      };
+      if (correction_note) updates.correction_note = correction_note;
+      if (voice_note_url)  updates.correction_voice_note_url = voice_note_url;
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id)
+        .select(TASK_SELECT)
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err) {
+      console.error('Send correction error:', err.message);
+      res.status(500).json({ error: err.message || 'Could not send correction' });
+    }
+  }
+);
+
+// ─── Send updation (employee sends additional notes back) ─────────────────────
+router.patch(
+  '/:id/send-updation',
+  upload.array('files', 10),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { updation_note } = req.body || {};
+
+      const fileUrls = [];
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          const url = await uploadFile(file, 'updation-files');
+          if (url) fileUrls.push(url);
+        }
+      }
+
+      const updates = { verification_status: 'Pending Verification' };
+      if (updation_note) updates.updation_note = updation_note;
+      if (fileUrls.length > 0) updates.updation_files = fileUrls;
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id)
+        .select(TASK_SELECT)
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err) {
+      console.error('Send updation error:', err.message);
+      res.status(500).json({ error: err.message || 'Could not send updation' });
+    }
+  }
+);
+
+// ─── Reschedule task ──────────────────────────────────────────────────────────
+router.patch('/:id/reschedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_date, reason } = req.body || {};
+
+    if (!new_date) return res.status(400).json({ error: 'New date is required' });
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ target_date: new_date, reschedule_reason: reason || null })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reschedule task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reschedule task' });
+  }
+});
+
+// ─── Overdue extend ───────────────────────────────────────────────────────────
+router.patch('/:id/overdue-extend', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_date, reason } = req.body || {};
+
+    if (!new_date) return res.status(400).json({ error: 'New date is required' });
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ target_date: new_date, reschedule_reason: reason || null })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Overdue extend error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not extend task deadline' });
+  }
+});
+
+// ─── Reassign task (admin only) ───────────────────────────────────────────────
+router.patch('/:id/reassign', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { employee_id } = req.body || {};
+
+    if (!employee_id) return res.status(400).json({ error: 'Please select an employee' });
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ assigned_to: employee_id, status: 'Pending', verification_status: 'Not Submitted' })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reassign task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reassign task' });
   }
 });
 
