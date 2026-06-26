@@ -1231,10 +1231,16 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
       }));
-      actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-      actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
-    });
-    actionsEl.appendChild(startBtn);
+    //   actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+    //   actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
+    // });
+    // actionsEl.appendChild(startBtn);
+    // return card;
+      actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
+      if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
+    }));
+    actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
+    actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     return card;
   }
   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
@@ -3768,14 +3774,14 @@ async function generateDailyReport() {
       </div>`;
     body.insertAdjacentHTML('beforeend', pmsHtml);
 
-    // ── Summary cards ──
-    body.insertAdjacentHTML('beforeend', `
-      <div class="drpt-summary-row">
-        <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${doneTasks.length}</div><div class="drpt-stat-label">✅ Completed</div></div>
-        <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${pendingTasks.length}</div><div class="drpt-stat-label">⏳ Pending</div></div>
-        <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdueTasks.length}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
-        <div class="drpt-stat-card drpt-stat-verify"><div class="drpt-stat-num">${verifyingTasks.length}</div><div class="drpt-stat-label">🔎 Under Verification</div></div>
-      </div>`);
+    // // ── Summary cards ──
+    // body.insertAdjacentHTML('beforeend', `
+    //   <div class="drpt-summary-row">
+    //     <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${doneTasks.length}</div><div class="drpt-stat-label">✅ Completed</div></div>
+    //     <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${pendingTasks.length}</div><div class="drpt-stat-label">⏳ Pending</div></div>
+    //     <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdueTasks.length}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
+    //     <div class="drpt-stat-card drpt-stat-verify"><div class="drpt-stat-num">${verifyingTasks.length}</div><div class="drpt-stat-label">🔎 Under Verification</div></div>
+    //   </div>`);
 
     // ── Main PMS table (all tasks combined, like the image) ──
     const allForDay = [
@@ -3957,13 +3963,13 @@ async function _generateDailyReportForRange(fromStr, toStr, body, dlBtn, subtitl
     const verif   = allTasks.filter(t => { if (!t.target_date) return false; const d = new Date(t.target_date); return d >= from && d <= to && t.verification_status === 'Pending Verification'; }).length;
     const total   = Object.values(byDate).flat().length;
 
-    body.insertAdjacentHTML('beforeend', `
-      <div class="drpt-summary-row">
-        <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${done}</div><div class="drpt-stat-label">✅ Completed</div></div>
-        <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdue}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
-        <div class="drpt-stat-card drpt-stat-verify"><div class="drpt-stat-num">${verif}</div><div class="drpt-stat-label">🔎 Under Verify</div></div>
-        <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${total}</div><div class="drpt-stat-label">📋 Total in Range</div></div>
-      </div>`);
+    // body.insertAdjacentHTML('beforeend', `
+    //   <div class="drpt-summary-row">
+    //     <div class="drpt-stat-card drpt-stat-done"><div class="drpt-stat-num">${done}</div><div class="drpt-stat-label">✅ Completed</div></div>
+    //     <div class="drpt-stat-card drpt-stat-overdue"><div class="drpt-stat-num">${overdue}</div><div class="drpt-stat-label">🔴 Overdue</div></div>
+    //     <div class="drpt-stat-card drpt-stat-verify"><div class="drpt-stat-num">${verif}</div><div class="drpt-stat-label">🔎 Under Verify</div></div>
+    //     <div class="drpt-stat-card drpt-stat-pending"><div class="drpt-stat-num">${total}</div><div class="drpt-stat-label">📋 Total in Range</div></div>
+    //   </div>`);
 
     // One PMS table per date in range
     uniqueDates.forEach(dateKey => {
