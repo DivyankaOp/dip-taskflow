@@ -9,7 +9,7 @@
 <title>DIP Projects — Task Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2" />
+<link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
 
@@ -705,10 +705,21 @@
           <div class="view-header-row" style="flex-wrap:wrap;gap:12px">
             <div class="view-heading" style="margin-bottom:0">
               <h2 class="view-title">📋 Daily Report</h2>
-              <p class="view-sub" id="drptSubtitle">Previous day's task status report</p>
+              <p class="view-sub" id="drptSubtitle">Task status report</p>
             </div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <input type="date" id="drptDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="drpt-mode-btn active" id="drptModeSingle">Single Day</button>
+                <button class="drpt-mode-btn" id="drptModeRange">Date Range</button>
+              </div>
+              <div id="drptSingleWrap" style="display:flex;gap:8px;align-items:center">
+                <input type="date" id="drptDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+              </div>
+              <div id="drptRangeWrap" style="display:none;gap:8px;align-items:center">
+                <input type="date" id="drptFromDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+                <span style="color:var(--text-muted);font-size:12px">to</span>
+                <input type="date" id="drptToDate" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" />
+              </div>
               <button id="drptGenBtn" class="primary-btn primary-btn-inline">🔄 Generate</button>
               <button id="drptDownloadBtn" class="ghost-btn" style="display:none">⬇️ Download PDF</button>
             </div>
@@ -1330,6 +1341,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
