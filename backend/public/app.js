@@ -1242,7 +1242,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
     actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     return card;
-  }
+  
   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
   return card;
 }
@@ -1598,17 +1598,17 @@ function renderVerificationsTable(tbody, tasks) {
       tdActions.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     }
 
-    if (activeVerifications.has(task.id)) {
-      // Already started before re-render — show verify/correction buttons directly
-      showVerifyActions();
-    } else {
-      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
-        activeVerifications.add(task.id);
-        showVerifyActions();
-      });
-      tdActions.appendChild(startBtn);
-    }
-
+    // if (activeVerifications.has(task.id)) {
+    //   // Already started before re-render — show verify/correction buttons directly
+    //   showVerifyActions();
+    // } else {
+    //   const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+    //     activeVerifications.add(task.id);
+    //     showVerifyActions();
+    //   });
+    //   tdActions.appendChild(startBtn);
+    // }
+showVerifyActions();
     tr.append(tdReqId, tdSr, tdProject, tdTaskType, tdSubmittedBy, tdAttach, tdDate, tdActions);
     tbody.appendChild(tr);
   });
