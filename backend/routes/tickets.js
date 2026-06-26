@@ -47,7 +47,10 @@ async function getOrCreate(table, name) {
 // Auto-creates a follow-up task for the MIS executive when a ticket lands in
 // a category they need to chase (Technical / Access). Best-effort: failures
 // here must never block the ticket itself from being saved.
-async function createMisFollowUpTask(ticket, raisedByName) {
+//
+// FIX: raisedById is now passed as an explicit param so the task's assigned_by
+// field uses req.user.id directly (not ticket.raised_by which may be stale).
+async function createMisFollowUpTask(ticket, raisedByName, raisedById) {
   const { data: misUser, error: misErr } = await supabase
     .from('users')
     .select('id')
@@ -74,7 +77,7 @@ async function createMisFollowUpTask(ticket, raisedByName) {
       project_id,
       task_type_id,
       assigned_to: misUser.id,
-      assigned_by: ticket.raised_by,
+      assigned_by: raisedById,   // ← use caller's user ID directly (the fix)
       description: `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
       target_date: targetDate.toISOString().slice(0, 10),
       priority: 'High',
@@ -139,7 +142,11 @@ router.post('/', upload.single('media'), async (req, res) => {
     // the MIS executive so it shows up in their normal task list — non-critical.
     if (MIS_TASK_CATEGORIES.has(category.trim())) {
       try {
-        await createMisFollowUpTask(data, req.user.full_name || 'an employee');
+        await createMisFollowUpTask(
+          data,
+          req.user.full_name || 'an employee',
+          req.user.id          // ← pass the caller's ID explicitly
+        );
       } catch (misErr) {
         console.error('MIS follow-up task error:', misErr.message);
       }
