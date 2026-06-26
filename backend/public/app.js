@@ -352,8 +352,6 @@ async function enterApp() {
   } else {
     switchView('my');
   }
-  // Load sidebar badge counts after nav is built
-  setTimeout(refreshNavBadges, 500);
 }
 
 function buildNav() {
@@ -431,60 +429,6 @@ function makeNavButton(key, label) {
   btn.className = 'nav-btn'; btn.textContent = label; btn.dataset.view = key;
   btn.addEventListener('click', () => { switchView(key); closeSidebar(); });
   return btn;
-}
-
-// ─── Nav Badges ──────────────────────────────────────────────────────────────
-// Keeps track of badge counts so we can update the nav without rebuilding it.
-const navBadges = {};
-
-function setNavBadge(viewKey, count) {
-  navBadges[viewKey] = count;
-  const btn = document.querySelector(`.nav-btn[data-view="${viewKey}"]`);
-  if (!btn) return;
-  // Remove existing badge
-  const existing = btn.querySelector('.nav-badge');
-  if (existing) existing.remove();
-  if (count > 0) {
-    const badge = document.createElement('span');
-    badge.className = 'nav-badge';
-    badge.textContent = count > 99 ? '99+' : count;
-    btn.appendChild(badge);
-  }
-}
-
-// Fetch open ticket count + overdue/pending task count and apply badges.
-async function refreshNavBadges() {
-  try {
-    // Tickets badge — open tickets (admin/mis see all; others see only their own)
-    const tickets = await api('/tickets');
-    const openTickets = tickets.filter(t => t.status === 'Open');
-    setNavBadge('tickets-open', openTickets.length);
-  } catch (_) { /* silent */ }
-
-  // Tasks badges — only for admin (employee already sees their tasks in My Tasks)
-  if (state.user.role === 'admin') {
-    try {
-      const tasks = await api('/tasks/all');
-      const now = new Date();
-      const overdue = tasks.filter(t => {
-        if (!t.target_date) return false;
-        if (t.status === 'Completed' || t.status === 'Rejected') return false;
-        if (t.verification_status === 'Verified') return false;
-        return new Date(t.target_date) < now;
-      });
-      setNavBadge('overdue', overdue.length);
-
-      const pending = tasks.filter(t => t.status === 'Pending');
-      setNavBadge('all', pending.length || 0);
-    } catch (_) { /* silent */ }
-  } else {
-    // Employee: badge on "My Tasks" for pending tasks
-    try {
-      const myTasks = await api('/tasks/my');
-      const active = myTasks.filter(t => t.status !== 'Completed' && t.status !== 'Rejected');
-      setNavBadge('my', active.length);
-    } catch (_) { /* silent */ }
-  }
 }
 
 function switchView(viewKey) {
@@ -1112,12 +1056,6 @@ function buildCardMenuItems(task, { showAssignee }) {
         updateStatus(task.id, 'Rejected', reason);
       }});
     }
-  } else if (state.user.role === 'admin' && !isAdminManaging && task.status === 'In Progress' && !isPendingVerification) {
-    // Admin viewing their own tasks (My Tasks) — Mark complete goes in the menu, not as a primary button
-    items.push({ label: '✅ Mark complete', onClick: () => updateStatus(task.id, 'Completed') });
-    if (task.rescheduling_possible) {
-      items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
-    }
   } else if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
     items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
   }
@@ -1144,7 +1082,9 @@ function buildPrimaryStatusButtons(task, { showAssignee, allowActions }) {
       updateStatus(task.id, 'Rejected', reason);
     }));
   }
-  // "Mark complete" for admin's own In Progress tasks is in the 3-dot menu, not here
+  if (task.status === 'In Progress' && state.user.role === 'admin') {
+    buttons.push(makeActionBtn('action-complete', 'Mark complete', () => updateStatus(task.id, 'Completed')));
+  }
   if (task.status === 'Rejected') {
     buttons.push(makeActionBtn('action-start', 'Re-open', () => updateStatus(task.id, 'Pending')));
   }
@@ -1235,7 +1175,6 @@ async function updateStatus(taskId, status, status_note) {
   try {
     await api(`/tasks/${taskId}/status`, { method: 'PATCH', body: { status, status_note } });
     showToast('Task updated ✅', 'success'); reloadCurrentTaskView();
-    refreshNavBadges();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -1839,7 +1778,6 @@ document.getElementById('submitSolutionBtn').addEventListener('click', async () 
     showToast('Solution submitted & ticket resolved ✅', 'success');
     document.getElementById('solutionModal').hidden = true;
     loadTickets();
-    refreshNavBadges();
   } catch (err) {
     msgEl.textContent = err.message;
     msgEl.hidden = false;
@@ -1890,9 +1828,7 @@ function renderTicketsList(tickets, statusFilter) {
     || !!state.user.can_resolve_tickets
     || !!state.user.is_mis_executive;
 
-  const canSolve = state.user.role === 'admin'
-    || !!state.user.can_resolve_tickets
-    || !!state.user.is_mis_executive;
+  const canSolve = state.user.role === 'admin' || !!state.user.can_resolve_tickets;
 
   tickets.forEach((ticket) => {
     const card = document.createElement('div');
@@ -3622,22 +3558,12 @@ document.addEventListener('change', (e) => {
 // ─── DAILY REPORT MODULE ──────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
-// Tracks which mode (single vs range) is active in daily report
-let _drptMode = 'single';
-
 function loadDailyReport() {
-  const dateInput      = document.getElementById('drptDate');
-  const genBtn         = document.getElementById('drptGenBtn');
-  const dlBtn          = document.getElementById('drptDownloadBtn');
-  const body           = document.getElementById('drptBody');
-  const subtitle       = document.getElementById('drptSubtitle');
-  const modeSingle     = document.getElementById('drptModeSingle');
-  const modeRange      = document.getElementById('drptModeRange');
-  const singleControls = document.getElementById('drptSingleControls');
-  const rangeControls  = document.getElementById('drptRangeControls');
-  const fromInput      = document.getElementById('drptFrom');
-  const toInput        = document.getElementById('drptTo');
-  const rangeGenBtn    = document.getElementById('drptRangeGenBtn');
+  const dateInput = document.getElementById('drptDate');
+  const genBtn    = document.getElementById('drptGenBtn');
+  const dlBtn     = document.getElementById('drptDownloadBtn');
+  const body      = document.getElementById('drptBody');
+  const subtitle  = document.getElementById('drptSubtitle');
 
   // Default: yesterday
   const yesterday = new Date();
@@ -3647,193 +3573,20 @@ function loadDailyReport() {
     dateInput.value = yStr;
     dateInput._drptInit = true;
   }
-  // Default range: last 7 days → yesterday
-  if (fromInput && !fromInput._drptInit) {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    fromInput.value = weekAgo.toISOString().slice(0, 10);
-    toInput.value   = yStr;
-    fromInput._drptInit = true;
-  }
 
-  // ── Mode toggle ──────────────────────────────────────────────────
-  if (modeSingle && !modeSingle._drptModeBound) {
-    modeSingle._drptModeBound = true;
-
-    function activateSingle() {
-      _drptMode = 'single';
-      modeSingle.classList.add('drpt-mode-active');
-      modeSingle.style.cssText = 'padding:7px 14px;background:var(--primary);color:#fff;border:none;cursor:pointer;font-size:0.82rem';
-      modeRange.style.cssText  = 'padding:7px 14px;background:transparent;color:var(--text,#111);border:none;cursor:pointer;font-size:0.82rem';
-      singleControls.style.display = 'flex';
-      rangeControls.style.display  = 'none';
-      if (body) body.innerHTML = '';
-      if (dlBtn) dlBtn.style.display = 'none';
-    }
-    function activateRange() {
-      _drptMode = 'range';
-      modeRange.style.cssText  = 'padding:7px 14px;background:var(--primary);color:#fff;border:none;cursor:pointer;font-size:0.82rem';
-      modeSingle.style.cssText = 'padding:7px 14px;background:transparent;color:var(--text,#111);border:none;cursor:pointer;font-size:0.82rem';
-      singleControls.style.display = 'none';
-      rangeControls.style.display  = 'flex';
-      if (body) body.innerHTML = '';
-      if (dlBtn) dlBtn.style.display = 'none';
-    }
-
-    modeSingle.addEventListener('click', activateSingle);
-    modeRange.addEventListener('click', activateRange);
-  }
-
-  // ── Single-date mode ─────────────────────────────────────────────
+  // Generate on button click
   if (genBtn && !genBtn._drptBound) {
     genBtn._drptBound = true;
     genBtn.addEventListener('click', () => generateDailyReport());
+    // Also generate on date change
     dateInput.addEventListener('change', () => generateDailyReport());
-    generateDailyReport(); // auto-generate on first load
+    // Auto-generate on first load
+    generateDailyReport();
   }
 
-  // ── Range mode (PMS) ─────────────────────────────────────────────
-  if (rangeGenBtn && !rangeGenBtn._drptBound) {
-    rangeGenBtn._drptBound = true;
-    rangeGenBtn.addEventListener('click', () => {
-      if (!fromInput.value || !toInput.value) {
-        showToast('Please select both From and To dates', 'error'); return;
-      }
-      if (fromInput.value > toInput.value) {
-        showToast('"From" date cannot be after "To" date', 'error'); return;
-      }
-      generatePmsRangeReport(fromInput.value, toInput.value);
-    });
-  }
-
-  // ── Download PDF ─────────────────────────────────────────────────
   if (dlBtn && !dlBtn._drptBound) {
     dlBtn._drptBound = true;
     dlBtn.addEventListener('click', () => downloadDailyReportPdf());
-  }
-}
-
-// ─── PMS Range Report ────────────────────────────────────────────────────────
-async function generatePmsRangeReport(from, to) {
-  const body     = document.getElementById('drptBody');
-  const subtitle = document.getElementById('drptSubtitle');
-  const dlBtn    = document.getElementById('drptDownloadBtn');
-
-  const fromDate = new Date(from); fromDate.setHours(0, 0, 0, 0);
-  const toDate   = new Date(to);   toDate.setHours(23, 59, 59, 999);
-  const now      = new Date();
-
-  const fmt = (iso) => iso
-    ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '—';
-
-  if (subtitle) subtitle.textContent =
-    `PMS Report: ${fmt(from)} → ${fmt(to)}`;
-
-  body.innerHTML = `<div class="empty-state">⏳ Generating PMS report…</div>`;
-  if (dlBtn) dlBtn.style.display = 'none';
-
-  try {
-    const allTasks = await api('/tasks/all');
-
-    // Tasks whose target_date falls within [from, to]
-    const rangeTasks = allTasks.filter(t => {
-      if (!t.target_date) return false;
-      const d = new Date(t.target_date); d.setHours(0, 0, 0, 0);
-      return d >= fromDate && d <= toDate;
-    });
-
-    // Sort by target_date ascending
-    rangeTasks.sort((a, b) => new Date(a.target_date) - new Date(b.target_date));
-
-    body.innerHTML = '';
-
-    // ── Summary cards ──────────────────────────────────────────────
-    const doneTasks     = rangeTasks.filter(t => t.status === 'Completed' || t.verification_status === 'Verified');
-    const overdueTasks  = rangeTasks.filter(t => {
-      if (t.status === 'Completed' || t.verification_status === 'Verified') return false;
-      return t.target_date && new Date(t.target_date) < now;
-    });
-    const pendingTasks  = rangeTasks.filter(t => t.status === 'Pending' || t.status === 'In Progress');
-    const verifyTasks   = rangeTasks.filter(t => t.verification_status === 'Pending Verification');
-
-    body.insertAdjacentHTML('beforeend', `
-      <div class="drpt-summary-row">
-        <div class="drpt-stat-card drpt-stat-done">
-          <div class="drpt-stat-num">${doneTasks.length}</div>
-          <div class="drpt-stat-label">✅ Completed</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-pending">
-          <div class="drpt-stat-num">${pendingTasks.length}</div>
-          <div class="drpt-stat-label">⏳ Pending / In Progress</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-overdue">
-          <div class="drpt-stat-num">${overdueTasks.length}</div>
-          <div class="drpt-stat-label">🔴 Overdue</div>
-        </div>
-        <div class="drpt-stat-card drpt-stat-verify">
-          <div class="drpt-stat-num">${verifyTasks.length}</div>
-          <div class="drpt-stat-label">🔎 Under Verification</div>
-        </div>
-      </div>
-    `);
-
-    if (!rangeTasks.length) {
-      body.insertAdjacentHTML('beforeend', `<div class="empty-state">No tasks with target date in this range</div>`);
-      return;
-    }
-
-    // ── PMS flat table ──────────────────────────────────────────────
-    body.insertAdjacentHTML('beforeend',
-      `<div class="drpt-section-title">📊 PMS Task Summary (${rangeTasks.length} tasks)</div>`);
-
-    const tableData = rangeTasks.map((t, i) => {
-      const isDone    = t.status === 'Completed' || t.verification_status === 'Verified';
-      const targetD   = t.target_date ? new Date(t.target_date) : null;
-      let daysDelay   = 0;
-      if (!isDone && targetD && targetD < now) {
-        daysDelay = Math.floor((now - targetD) / 86400000);
-      }
-
-      const delayCell = daysDelay > 0
-        ? `<span class="drpt-overdue-badge">+${daysDelay}d late</span>`
-        : (isDone
-          ? `<span style="color:#059669;font-weight:700">On time</span>`
-          : `<span style="color:#6b7280">—</span>`);
-
-      let statusLabel = t.status;
-      if      (t.verification_status === 'Verified')             statusLabel = '✅ Verified';
-      else if (t.verification_status === 'Pending Verification') statusLabel = '🔎 Verifying';
-      else if (t.status === 'Completed')  statusLabel = '✅ Done';
-      else if (t.status === 'In Progress') statusLabel = '🔵 In Progress';
-      else if (t.status === 'Pending')    statusLabel = '⏳ Pending';
-      else if (t.status === 'Rejected')   statusLabel = '❌ Rejected';
-
-      return {
-        sr:          i + 1,
-        employee:    t.assigned_to_user?.full_name ?? '—',
-        department:  t.department?.name ?? '—',
-        project:     t.project?.name ?? '—',
-        task:        (t.description ?? '').length > 80 ? t.description.slice(0, 80) + '…' : (t.description ?? '—'),
-        task_type:   t.task_type?.name ?? '—',
-        target_date: t.target_date ? fmt(t.target_date) : '—',
-        delay:       delayCell,
-        status:      statusLabel,
-        remarks:     ''  // editable
-      };
-    });
-
-    const tbl = buildDrptTable(
-      ['Sr', 'Employee', 'Dept', 'Project', 'Task', 'Task Type', 'Target Date', 'Delay', 'Status', 'Remarks'],
-      tableData,
-      true   // last column is editable remarks
-    );
-    body.appendChild(tbl);
-
-    if (dlBtn) dlBtn.style.display = '';
-
-  } catch (err) {
-    body.innerHTML = `<div class="empty-state">Failed to generate PMS report: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -3846,138 +3599,150 @@ async function generateDailyReport() {
   const reportDate = dateInput.value;
   if (!reportDate) return;
 
-  const rDate    = new Date(reportDate); rDate.setHours(0,0,0,0);
-  const rDateEnd = new Date(rDate); rDateEnd.setHours(23,59,59,999);
-  const now      = new Date();
+  const d = new Date(reportDate);
+  const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
+  if (subtitle) subtitle.textContent = `Report for ${label}`;
 
-  const fmtD = (iso) => iso
-    ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '—';
-
-  const fromLabel = fmtD(reportDate);
-  if (subtitle) subtitle.textContent = `PMS Report — ${fromLabel}`;
-  body.innerHTML = `<div class="empty-state">⏳ Generating report…</div>`;
-  if (dlBtn) dlBtn.style.display = 'none';
+  body.innerHTML = `<div class="empty-state">Generating report…</div>`;
 
   try {
     const allTasks = await api('/tasks/all');
+    const today = new Date(); today.setHours(0,0,0,0);
+    const rDate = new Date(reportDate); rDate.setHours(0,0,0,0);
+    const rDateEnd = new Date(rDate); rDateEnd.setDate(rDateEnd.getDate() + 1);
 
-    // All tasks whose target_date is on or before the selected date
-    const tasks = allTasks.filter(t => {
-      if (!t.target_date) return false;
-      const d = new Date(t.target_date); d.setHours(0,0,0,0);
-      return d <= rDateEnd;
+    // ── categorise tasks ───────────────────────────────────────────
+    const doneTasks      = [];  // completed on report date
+    const pendingTasks   = [];  // not done, deadline <= reportDate
+    const verifyingTasks = [];  // pending verification as of reportDate
+    const overdueTasks   = [];  // target_date < reportDate and not done
+
+    allTasks.forEach(t => {
+      const isDone = t.status === 'Completed' || t.verification_status === 'Verified';
+      const targetD = t.target_date ? new Date(t.target_date) : null;
+      if (targetD) targetD.setHours(0,0,0,0);
+
+      if (isDone) {
+        // Show in done if completed on or before report date
+        doneTasks.push(t);
+        return;
+      }
+      if (t.verification_status === 'Pending Verification') {
+        verifyingTasks.push(t);
+        return;
+      }
+      if (targetD && targetD < rDateEnd) {
+        const days = Math.floor((rDate - targetD) / 86400000);
+        pendingTasks.push({ ...t, _daysLate: Math.max(0, days) });
+        if (days > 0) overdueTasks.push({ ...t, _daysLate: days });
+      }
     });
 
-    // Sort: target_date ascending, then by assignee name
-    tasks.sort((a, b) => {
-      const da = new Date(a.target_date), db = new Date(b.target_date);
-      if (da - db !== 0) return da - db;
-      return (a.assigned_to_user?.full_name ?? '').localeCompare(b.assigned_to_user?.full_name ?? '');
-    });
+    // Sort overdue by days descending
+    overdueTasks.sort((a, b) => b._daysLate - a._daysLate);
+    pendingTasks.sort((a, b) => b._daysLate - a._daysLate);
 
     body.innerHTML = '';
 
-    if (!tasks.length) {
-      body.innerHTML = `<div class="empty-state">No tasks found for this date</div>`;
-      return;
+    // ── Summary cards ──────────────────────────────────────────────
+    const summaryHtml = `
+      <div class="drpt-summary-row">
+        <div class="drpt-stat-card drpt-stat-done">
+          <div class="drpt-stat-num">${doneTasks.length}</div>
+          <div class="drpt-stat-label">✅ Completed</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-pending">
+          <div class="drpt-stat-num">${pendingTasks.length}</div>
+          <div class="drpt-stat-label">⏳ Pending</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-overdue">
+          <div class="drpt-stat-num">${overdueTasks.length}</div>
+          <div class="drpt-stat-label">🔴 Overdue</div>
+        </div>
+        <div class="drpt-stat-card drpt-stat-verify">
+          <div class="drpt-stat-num">${verifyingTasks.length}</div>
+          <div class="drpt-stat-label">🔎 Under Verification</div>
+        </div>
+      </div>`;
+    body.insertAdjacentHTML('beforeend', summaryHtml);
+
+    // ── Overdue Tasks table ────────────────────────────────────────
+    if (overdueTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title">🔴 Overdue Tasks</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Days Overdue', 'Status', 'Remarks'],
+        overdueTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          days: `<span class="drpt-overdue-badge">${t._daysLate} day${t._daysLate !== 1 ? 's' : ''}</span>`,
+          status: t.status,
+          remarks: t._remarks || ''
+        })),
+        true // editable remarks
+      );
+      body.appendChild(tbl);
     }
 
-    // ── PMS flat table — same style as Image 3 ─────────────────────
-    const wrap  = document.createElement('div');
-    wrap.className = 'table-wrap';
+    // ── Pending Tasks table ────────────────────────────────────────
+    const pendingNotOverdue = pendingTasks.filter(t => t._daysLate === 0);
+    if (pendingNotOverdue.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">⏳ Pending Tasks (Due Today)</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status', 'Remarks'],
+        pendingNotOverdue.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: t.status,
+          remarks: t._remarks || ''
+        })),
+        true
+      );
+      body.appendChild(tbl);
+    }
 
-    const tbl   = document.createElement('table');
-    tbl.className = 'data-table drpt-table pms-table';
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.82rem';
+    // ── Under Verification table ───────────────────────────────────
+    if (verifyingTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">🔎 Under Verification</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Verifier', 'Target Date', 'Status'],
+        verifyingTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          verifier: t.verifier?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: `<span class="pill pill-PendingVerification" style="font-size:0.72rem">⏳ Verifying</span>`
+        })),
+        false
+      );
+      body.appendChild(tbl);
+    }
 
-    // Header
-    tbl.innerHTML = `
-      <thead>
-        <tr style="background:#1e1b4b;color:#fff">
-          <th style="padding:8px 10px;text-align:center;width:48px">Sr.no</th>
-          <th style="padding:8px 10px;text-align:center;width:100px">Date</th>
-          <th style="padding:8px 10px;text-align:left">Task</th>
-          <th style="padding:8px 10px;text-align:center;width:130px">Assignee</th>
-          <th style="padding:8px 10px;text-align:center;width:90px">Delay</th>
-          <th style="padding:8px 10px;text-align:left;width:180px">Remarks</th>
-        </tr>
-      </thead>
-    `;
+    // ── Completed Tasks table ──────────────────────────────────────
+    if (doneTasks.length) {
+      body.insertAdjacentHTML('beforeend', `<div class="drpt-section-title" style="margin-top:28px">✅ Completed Tasks</div>`);
+      const tbl = buildDrptTable(
+        ['Sr', 'Project', 'Task', 'Assignee', 'Target Date', 'Status'],
+        doneTasks.map((t, i) => ({
+          sr: i + 1,
+          project: t.project?.name ?? '—',
+          task: t.description,
+          assignee: t.assigned_to_user?.full_name ?? '—',
+          target_date: t.target_date ? fmtDate(t.target_date) : '—',
+          status: `<span class="pill pill-Completed" style="font-size:0.72rem">✅ Done</span>`
+        })),
+        false
+      );
+      body.appendChild(tbl);
+    }
 
-    const tbody = document.createElement('tbody');
-
-    tasks.forEach((t, i) => {
-      const isDone    = t.status === 'Completed' || t.verification_status === 'Verified';
-      const isVerify  = t.verification_status === 'Pending Verification';
-      const targetD   = t.target_date ? new Date(t.target_date) : null;
-      if (targetD) targetD.setHours(0,0,0,0);
-
-      // Delay calculation
-      let daysLate = 0;
-      if (!isDone && targetD && targetD < now) {
-        daysLate = Math.floor((now - targetD) / 86400000);
-      }
-
-      // Delay cell — yellow highlight like Image 3
-      let delayCell, delayBg;
-      if (isDone) {
-        delayCell = `<span style="color:#059669;font-weight:700">DONE</span>`;
-        delayBg   = '#d1fae5';
-      } else if (isVerify) {
-        delayCell = `<span style="color:#6d28d9;font-weight:700">Under Verification</span>`;
-        delayBg   = '#ede9fe';
-      } else if (daysLate > 0) {
-        delayCell = `<span style="font-weight:700;color:#b45309">${daysLate} Days</span>`;
-        delayBg   = '#fef08a'; // yellow like Image 3
-      } else {
-        delayCell = `<span style="color:#6b7280">—</span>`;
-        delayBg   = '';
-      }
-
-      // Remarks: verifier name for verification tasks, else blank editable
-      let remarksContent = '';
-      if (isVerify && t.verifier?.full_name) {
-        remarksContent = `Under Verification\n${t.verifier.full_name}`;
-      }
-
-      // Task label: Project name (bold) + description
-      const projName = t.project?.name ? `<strong>${escapeHtml(t.project.name)}</strong><br>` : '';
-      const taskDesc = escapeHtml(t.description ?? '');
-
-      const tr = document.createElement('tr');
-      tr.style.background = i % 2 === 0 ? '#fff' : '#f9fafb';
-
-      tr.innerHTML = `
-        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb">${i + 1}</td>
-        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;white-space:nowrap">${fmtD(t.target_date)}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb">${projName}${taskDesc}</td>
-        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-weight:600;text-transform:uppercase;font-size:0.75rem">${escapeHtml((t.assigned_to_user?.full_name ?? '—').toUpperCase())}</td>
-        <td style="padding:7px 10px;text-align:center;border-bottom:1px solid #e5e7eb;background:${delayBg}">${delayCell}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb"></td>
-      `;
-
-      // Editable remarks input in last cell
-      const remarksTd = tr.querySelectorAll('td')[5];
-      if (remarksContent) {
-        remarksTd.style.fontSize = '0.75rem';
-        remarksTd.style.color = '#6d28d9';
-        remarksTd.textContent = remarksContent;
-      } else {
-        const inp = document.createElement('input');
-        inp.type = 'text';
-        inp.placeholder = 'Add remark…';
-        inp.className = 'drpt-remark-input';
-        inp.style.cssText = 'border:none;background:transparent;width:100%;font-size:0.82rem;outline:none';
-        remarksTd.appendChild(inp);
-      }
-
-      tbody.appendChild(tr);
-    });
-
-    tbl.appendChild(tbody);
-    wrap.appendChild(tbl);
-    body.appendChild(wrap);
     if (dlBtn) dlBtn.style.display = '';
 
   } catch (err) {
@@ -4031,11 +3796,7 @@ function buildDrptTable(headers, rows, editableRemarks) {
 
 function downloadDailyReportPdf() {
   const dateInput  = document.getElementById('drptDate');
-  const fromInput  = document.getElementById('drptFrom');
-  const toInput    = document.getElementById('drptTo');
-  const reportDate = _drptMode === 'range'
-    ? `${fromInput?.value || ''}_to_${toInput?.value || ''}`
-    : (dateInput?.value || 'report');
+  const reportDate = dateInput?.value || 'report';
   const body       = document.getElementById('drptBody');
   const subtitle   = document.getElementById('drptSubtitle');
 
@@ -4071,7 +3832,7 @@ function downloadDailyReportPdf() {
       </style>
     </head>
     <body>
-      <h1>📋 DIP Projects — PMS Report</h1>
+      <h1>📋 DIP Projects — Daily Report</h1>
       <p class="sub">${subtitle?.textContent || reportDate}</p>
       ${body.innerHTML.replace(/class="drpt-remark-input"/g, 'style="border:none;width:100%;font-size:11px"')}
       <script>window.onload = () => { window.print(); }<\/script>
