@@ -14,6 +14,9 @@ const upload = multer({
 
 const BUCKET = 'task-files';
 
+// Categories that warrant spinning up a task for the MIS executive to chase down.
+const MIS_TASK_CATEGORIES = new Set(['Technical', 'Access']);
+
 async function uploadFile(file, folder) {
   if (!file) return null;
   const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -24,6 +27,64 @@ async function uploadFile(file, folder) {
   if (error) throw error;
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+// Finds (or creates, once) the master-data rows used to file MIS follow-up
+// tasks under, so they show up cleanly in the normal task lists/reports
+// instead of needing nullable FKs.
+async function getOrCreate(table, name) {
+  const { data: existing, error: findErr } = await supabase
+    .from(table).select('id').eq('name', name).maybeSingle();
+  if (findErr) throw findErr;
+  if (existing) return existing.id;
+
+  const { data: created, error: createErr } = await supabase
+    .from(table).insert({ name }).select('id').single();
+  if (createErr) throw createErr;
+  return created.id;
+}
+
+// Auto-creates a follow-up task for the MIS executive when a ticket lands in
+// a category they need to chase (Technical / Access). Best-effort: failures
+// here must never block the ticket itself from being saved.
+async function createMisFollowUpTask(ticket, raisedByName) {
+  const { data: misUser, error: misErr } = await supabase
+    .from('users')
+    .select('id')
+    .eq('is_mis_executive', true)
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (misErr || !misUser) return null; // no MIS executive configured — skip silently
+
+  const [department_id, project_id, task_type_id] = await Promise.all([
+    getOrCreate('departments', 'MIS Support'),
+    getOrCreate('projects', 'Internal Support'),
+    getOrCreate('task_types', 'Ticket Follow-up')
+  ]);
+
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + 1); // default: next day
+
+  const { data: task, error: taskErr } = await supabase
+    .from('tasks')
+    .insert({
+      department_id,
+      project_id,
+      task_type_id,
+      assigned_to: misUser.id,
+      assigned_by: ticket.raised_by,
+      description: `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
+      target_date: targetDate.toISOString().slice(0, 10),
+      priority: 'High',
+      rescheduling_possible: true,
+      status: 'Pending'
+    })
+    .select('id')
+    .single();
+  if (taskErr) throw taskErr;
+  return task.id;
 }
 
 const TICKET_SELECT = `
@@ -52,9 +113,9 @@ router.post('/', upload.single('media'), async (req, res) => {
     const { data, error } = await supabase
       .from('tickets')
       .insert({
-        task_id:     task_id || null,
-        raised_by:   req.user.id,
-        category:    category.trim(),
+        task_id: task_id || null,
+        raised_by: req.user.id,
+        category: category.trim(),
         description: description.trim(),
         attachment_url,
         status: 'Open'
@@ -64,7 +125,7 @@ router.post('/', upload.single('media'), async (req, res) => {
 
     if (error) throw error;
 
-    // If ticket is linked to a task, update that task's status to 'Ticket Raised'
+    // If ticket is linked to a task, update task status to 'Ticket Raised'
     if (task_id) {
       try {
         await supabase
@@ -72,6 +133,16 @@ router.post('/', upload.single('media'), async (req, res) => {
           .update({ status: 'Ticket Raised' })
           .eq('id', task_id);
       } catch (_) { /* non-critical — ticket is already saved */ }
+    }
+
+    // Technical / Access issues automatically spin up a follow-up task for
+    // the MIS executive so it shows up in their normal task list — non-critical.
+    if (MIS_TASK_CATEGORIES.has(category.trim())) {
+      try {
+        await createMisFollowUpTask(data, req.user.full_name || 'an employee');
+      } catch (misErr) {
+        console.error('MIS follow-up task error:', misErr.message);
+      }
     }
 
     res.status(201).json(data);
@@ -86,9 +157,7 @@ router.post('/', upload.single('media'), async (req, res) => {
 // Everyone else → sees only their own
 router.get('/', async (req, res) => {
   try {
-    // Check JWT first (fast path), then DB for non-admin users
-    let seeAll = req.user.role === 'admin' || !!req.user.is_mis_executive;
-
+    let seeAll = req.user.role === 'admin';
     if (!seeAll) {
       const { data: me, error: meErr } = await supabase
         .from('users')
@@ -117,14 +186,15 @@ router.get('/', async (req, res) => {
 // ─── Solve / resolve (admin always; others need can_resolve_tickets flag) ────
 router.patch('/:id/solve', async (req, res) => {
   try {
+    // Admins bypass permission check; others need the flag
     if (req.user.role !== 'admin') {
       const { data: me, error: meErr } = await supabase
         .from('users')
-        .select('can_resolve_tickets, is_mis_executive')
+        .select('can_resolve_tickets')
         .eq('id', req.user.id)
         .maybeSingle();
       if (meErr) throw meErr;
-      if (!me?.can_resolve_tickets && !me?.is_mis_executive) {
+      if (!me?.can_resolve_tickets) {
         return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
       }
     }
@@ -137,8 +207,8 @@ router.patch('/:id/solve', async (req, res) => {
     const { data, error } = await supabase
       .from('tickets')
       .update({
-        status:      'Resolved',
-        solution:    solution.trim(),
+        status: 'Resolved',
+        solution: solution.trim(),
         solution_by: req.user.id,
         solution_at: new Date().toISOString()
       })
