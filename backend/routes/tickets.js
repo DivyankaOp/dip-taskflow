@@ -120,11 +120,11 @@ router.patch('/:id/solve', async (req, res) => {
     if (req.user.role !== 'admin') {
       const { data: me, error: meErr } = await supabase
         .from('users')
-        .select('can_resolve_tickets')
+        .select('can_resolve_tickets, is_mis_executive')
         .eq('id', req.user.id)
         .maybeSingle();
       if (meErr) throw meErr;
-      if (!me?.can_resolve_tickets) {
+      if (!me?.can_resolve_tickets && !me?.is_mis_executive) {
         return res.status(403).json({ error: 'You do not have permission to resolve tickets' });
       }
     }
