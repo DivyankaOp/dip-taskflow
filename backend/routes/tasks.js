@@ -1,65 +1,83 @@
 const express = require('express');
-const multer  = require('multer');
+const multer = require('multer');
 const supabase = require('../lib/supabaseClient');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
 
-// 10 MB limit for attachments / voice notes
+// 5 MB per file by default — change MAX_FILE_SIZE_MB below if you actually need a larger limit.
+const MAX_FILE_SIZE_MB = 5;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 }
 });
 
 const BUCKET = 'task-files';
 
-async function uploadFile(file, folder) {
-  if (!file) return null;
-  const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-  const path = `${folder}/${Date.now()}_${safeName}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file.buffer, {
-    contentType: file.mimetype, upsert: false
-  });
-  if (error) throw error;
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
-
+// Nested select used everywhere we return a task, so every task always
+// looks the same on the wire (matches what frontend/app.js expects).
 const TASK_SELECT = `
-  id, description, status, priority, target_date, hours_to_complete,
-  rescheduling_possible, attachment_url, voice_note_url,
-  verification_status, status_note, created_at,
-  department:departments ( id, name ),
+  id, description, hours_to_complete, target_date, priority,
+  rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
+  accepted_at, rejected_at, sent_for_verification_at, verified_at,
+  verification_status, verification_note, verification_attachment_urls,
+  correction_voice_url, updation_note,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
+  department:departments ( id, name ),
   assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
   assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
   verifier:users!tasks_verifier_id_fkey ( id, full_name )
 `;
 
-// ─── Create task (admin only, multipart) ──────────────────────────────────────
+async function uploadFile(file, folder) {
+  if (!file) return null;
+  const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const path = `${folder}/${Date.now()}_${safeName}`;
+
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file.buffer, {
+    contentType: file.mimetype,
+    upsert: false
+  });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ----------------------------- create task (admin only) -----------------------------
 router.post(
   '/',
   requireAdmin,
-  upload.fields([{ name: 'attachment', maxCount: 1 }, { name: 'voice_note', maxCount: 1 }]),
+  upload.fields([
+    { name: 'attachment', maxCount: 1 },
+    { name: 'voice_note', maxCount: 1 }
+  ]),
   async (req, res) => {
     try {
       const {
-        department_id, assigned_to, project_id, task_type_id,
-        description, target_date, priority, rescheduling_possible, hours_to_complete
-      } = req.body || {};
+        department_id,
+        assigned_to,
+        project_id,
+        task_type_id,
+        description,
+        hours_to_complete,
+        target_date,
+        priority,
+        rescheduling_possible
+      } = req.body;
 
       if (!department_id || !assigned_to || !project_id || !task_type_id || !description || !target_date) {
         return res.status(400).json({ error: 'Please fill in all required fields' });
       }
 
-      const attachmentFile  = req.files?.attachment?.[0]  || null;
-      const voiceNoteFile   = req.files?.voice_note?.[0]  || null;
+      const attachmentFile = req.files?.attachment?.[0];
+      const voiceNoteFile = req.files?.voice_note?.[0];
 
       const [attachment_url, voice_note_url] = await Promise.all([
-        uploadFile(attachmentFile,  'attachments'),
-        uploadFile(voiceNoteFile,   'voice-notes'),
+        uploadFile(attachmentFile, 'attachments'),
+        uploadFile(voiceNoteFile, 'voice-notes')
       ]);
 
       const { data, error } = await supabase
@@ -71,14 +89,13 @@ router.post(
           project_id,
           task_type_id,
           description,
+          hours_to_complete: hours_to_complete ? Number(hours_to_complete) : null,
           target_date,
           priority: priority || 'Medium',
-          rescheduling_possible: rescheduling_possible === 'true' || rescheduling_possible === true,
-          hours_to_complete: hours_to_complete ? Number(hours_to_complete) : null,
+          rescheduling_possible: rescheduling_possible === 'true',
           attachment_url,
           voice_note_url,
-          status: 'Pending',
-          verification_status: 'Not Submitted'
+          status: 'Pending'
         })
         .select(TASK_SELECT)
         .single();
@@ -92,17 +109,14 @@ router.post(
   }
 );
 
-// ─── List all tasks (admin only, with optional filters) ───────────────────────
+// ----------------------------- all delegated tasks (admin only, reference view) -----------------------------
 router.get('/all', requireAdmin, async (req, res) => {
   try {
-    let query = supabase
-      .from('tasks')
-      .select(TASK_SELECT)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('tasks').select(TASK_SELECT).order('target_date', { ascending: true });
 
     if (req.query.department_id) query = query.eq('department_id', req.query.department_id);
-    if (req.query.employee_id)   query = query.eq('assigned_to',  req.query.employee_id);
-    if (req.query.status)        query = query.eq('status',       req.query.status);
+    if (req.query.employee_id) query = query.eq('assigned_to', req.query.employee_id);
+    if (req.query.status) query = query.eq('status', req.query.status);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -113,15 +127,18 @@ router.get('/all', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── My tasks (logged-in user) ────────────────────────────────────────────────
+// ----------------------------- my tasks (everyone — only their own) -----------------------------
 router.get('/my', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('tasks')
       .select(TASK_SELECT)
       .eq('assigned_to', req.user.id)
-      .order('created_at', { ascending: false });
+      .order('target_date', { ascending: true });
 
+    if (req.query.status) query = query.eq('status', req.query.status);
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -130,86 +147,41 @@ router.get('/my', async (req, res) => {
   }
 });
 
-// ─── Tasks pending verification (verifier view) ───────────────────────────────
+// ----------------------------- verification queue (for verifiers/admin) -----------------------------
 router.get('/verifications', async (req, res) => {
   try {
-    let query = supabase
+    const { data, error } = await supabase
       .from('tasks')
       .select(TASK_SELECT)
+      .eq('verifier_id', req.user.id)
       .eq('verification_status', 'Pending Verification')
-      .order('created_at', { ascending: false });
-
-    // Non-admins only see tasks assigned to them to verify
-    if (req.user.role !== 'admin') {
-      query = query.eq('verifier_id', req.user.id);
-    }
-
-    const { data, error } = await query;
+      .order('target_date', { ascending: true });
     if (error) throw error;
     res.json(data);
   } catch (err) {
     console.error('List verifications error:', err.message);
-    res.status(500).json({ error: 'Could not load verification tasks' });
+    res.status(500).json({ error: 'Could not load verification requests' });
   }
 });
 
-// ─── Reports endpoint ─────────────────────────────────────────────────────────
-router.get('/report', requireAdmin, async (req, res) => {
-  try {
-    const { range, from, to, employee_id, department_id } = req.query;
-
-    let query = supabase
-      .from('tasks')
-      .select(TASK_SELECT)
-      .order('created_at', { ascending: false });
-
-    if (employee_id)   query = query.eq('assigned_to',  employee_id);
-    if (department_id) query = query.eq('department_id', department_id);
-
-    if (range === 'custom' && from && to) {
-      query = query.gte('created_at', from).lte('created_at', to + 'T23:59:59');
-    } else if (range) {
-      const now = new Date();
-      const cutoff = new Date();
-      if (range === 'today') {
-        cutoff.setHours(0, 0, 0, 0);
-      } else if (range === 'week') {
-        cutoff.setDate(now.getDate() - 7);
-      } else if (range === 'month') {
-        cutoff.setDate(now.getDate() - 30);
-      }
-      query = query.gte('created_at', cutoff.toISOString());
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    console.error('Report error:', err.message);
-    res.status(500).json({ error: 'Could not load report' });
-  }
-});
-
-// ─── Update task status (employee marks in-progress / done) ──────────────────
-router.patch('/:id/status', async (req, res) => {
+// ----------------------------- accept task -----------------------------
+router.patch('/:id/accept', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, status_note } = req.body || {};
 
-    if (!status) return res.status(400).json({ error: 'Status is required' });
-
-    // Employees can only update their own tasks
     const { data: existing, error: fetchErr } = await supabase
       .from('tasks').select('id, assigned_to, status').eq('id', id).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
-    if (req.user.role !== 'admin' && existing.assigned_to !== req.user.id) {
-      return res.status(403).json({ error: 'You can only update your own tasks' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only accept your own tasks' });
     }
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({ status, status_note: status_note || null })
+      .update({ status: 'In Progress', accepted_at: new Date().toISOString() })
       .eq('id', id)
       .select(TASK_SELECT)
       .single();
@@ -217,41 +189,136 @@ router.patch('/:id/status', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (err) {
-    console.error('Update task status error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not update task status' });
+    console.error('Accept task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not accept task' });
   }
 });
 
-// ─── Send for verification ────────────────────────────────────────────────────
+// ----------------------------- reject task (assignee declines — reason required) -----------------------------
+router.patch('/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Please give a reason for rejecting this task' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only reject your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        status: 'Rejected',
+        rejected_at: new Date().toISOString(),
+        status_note: `Rejected by ${req.user.full_name}: ${reason.trim()}`
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reject task error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reject task' });
+  }
+});
+
+// ----------------------------- update status (assignee or admin) -----------------------------
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, status_note } = req.body || {};
+    const allowedStatuses = ['Pending', 'In Progress', 'Completed', 'Rejected'];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('id, assigned_to')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only update your own tasks' });
+    }
+
+    const updates = { status };
+    if (status === 'Rejected') {
+      updates.status_note = `Rejected by ${req.user.full_name}${status_note ? `: ${status_note}` : ''}`;
+      updates.rejected_at = new Date().toISOString();
+    } else if (status === 'Pending') {
+      updates.status_note = null;
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Update status error:', err.message);
+    res.status(500).json({ error: 'Could not update task' });
+  }
+});
+
+// ----------------------------- send for verification -----------------------------
+// multipart/form-data: text field "verifier_id" + up to 3 files "verification_files"
 router.patch(
   '/:id/send-for-verification',
-  upload.array('files', 10),
+  upload.array('verification_files', 3),
   async (req, res) => {
     try {
       const { id } = req.params;
       const { verifier_id } = req.body || {};
-
-      if (!verifier_id) return res.status(400).json({ error: 'Please select a verifier' });
-
-      // Upload any proof files
-      const fileUrls = [];
-      if (req.files && req.files.length > 0) {
-        for (const file of req.files) {
-          const url = await uploadFile(file, 'verification-proof');
-          if (url) fileUrls.push(url);
-        }
+      if (!verifier_id) {
+        return res.status(400).json({ error: 'Please choose who should verify this task' });
       }
 
-      const updates = {
-        verification_status: 'Pending Verification',
-        verifier_id,
-        status: 'Completed'
-      };
-      if (fileUrls.length > 0) updates.verification_files = fileUrls;
+      const { data: existing, error: fetchErr } = await supabase
+        .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+      const isOwnTask = existing.assigned_to === req.user.id;
+      if (!isOwnTask && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'You can only send your own tasks for verification' });
+      }
+
+      const files = req.files || [];
+      const verification_attachment_urls = await Promise.all(
+        files.map((file) => uploadFile(file, 'verification-attachments'))
+      );
 
       const { data, error } = await supabase
         .from('tasks')
-        .update(updates)
+        .update({
+          verifier_id,
+          verification_status: 'Pending Verification',
+          verification_note: null,
+          correction_voice_url: null,
+          sent_for_verification_at: new Date().toISOString(),
+          verification_attachment_urls: verification_attachment_urls.length ? verification_attachment_urls : null
+        })
         .eq('id', id)
         .select(TASK_SELECT)
         .single();
@@ -265,20 +332,29 @@ router.patch(
   }
 );
 
-// ─── Verify / approve a task ──────────────────────────────────────────────────
+// ----------------------------- approve verification (the chosen verifier, or admin) -----------------------------
 router.patch('/:id/verify', async (req, res) => {
   try {
     const { id } = req.params;
-    const { approved } = req.body || {};
+    const { approved, note } = req.body || {};
 
-    const newVerifStatus = approved ? 'Verified' : 'Rejected';
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, verifier_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isChosenVerifier = existing.verifier_id === req.user.id;
+    if (!isChosenVerifier && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You are not the verifier for this task' });
+    }
+
+    const updates = approved
+      ? { verification_status: 'Verified', verification_note: note || null, status: 'Completed', verified_at: new Date().toISOString() }
+      : { verification_status: 'Verification Rejected', verification_note: note || null, status: 'In Progress' };
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({
-        verification_status: newVerifStatus,
-        status: approved ? 'Completed' : 'Rejected'
-      })
+      .update(updates)
       .eq('id', id)
       .select(TASK_SELECT)
       .single();
@@ -287,32 +363,47 @@ router.patch('/:id/verify', async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('Verify task error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not verify task' });
+    res.status(500).json({ error: err.message || 'Could not update verification' });
   }
 });
 
-// ─── Send correction (verifier → employee) ────────────────────────────────────
+// ----------------------------- send correction (verifier/admin: reject with optional voice note) -----------------------------
+// multipart/form-data: "note" text field + optional "correction_voice" audio file
 router.patch(
   '/:id/send-correction',
-  upload.fields([{ name: 'voice_note', maxCount: 1 }]),
+  upload.single('correction_voice'),
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { correction_note } = req.body || {};
+      const { note } = req.body || {};
 
-      const voiceNoteFile = req.files?.voice_note?.[0] || null;
-      const voice_note_url = await uploadFile(voiceNoteFile, 'correction-voice-notes');
+      if (!note || !note.trim()) {
+        return res.status(400).json({ error: 'Please write a correction note before sending' });
+      }
 
-      const updates = {
-        verification_status: 'Correction Required',
-        status: 'Pending'
-      };
-      if (correction_note) updates.correction_note = correction_note;
-      if (voice_note_url)  updates.correction_voice_note_url = voice_note_url;
+      const { data: existing, error: fetchErr } = await supabase
+        .from('tasks').select('id, verifier_id').eq('id', id).maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+      const isChosenVerifier = existing.verifier_id === req.user.id;
+      if (!isChosenVerifier && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'You are not the verifier for this task' });
+      }
+
+      let correction_voice_url = null;
+      if (req.file) {
+        correction_voice_url = await uploadFile(req.file, 'correction-voices');
+      }
 
       const { data, error } = await supabase
         .from('tasks')
-        .update(updates)
+        .update({
+          verification_status: 'Verification Rejected',
+          verification_note: note.trim(),
+          status: 'In Progress',
+          correction_voice_url
+        })
         .eq('id', id)
         .select(TASK_SELECT)
         .single();
@@ -326,54 +417,33 @@ router.patch(
   }
 );
 
-// ─── Send updation (employee sends additional notes back) ─────────────────────
-router.patch(
-  '/:id/send-updation',
-  upload.array('files', 10),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { updation_note } = req.body || {};
-
-      const fileUrls = [];
-      if (req.files && req.files.length > 0) {
-        for (const file of req.files) {
-          const url = await uploadFile(file, 'updation-files');
-          if (url) fileUrls.push(url);
-        }
-      }
-
-      const updates = { verification_status: 'Pending Verification' };
-      if (updation_note) updates.updation_note = updation_note;
-      if (fileUrls.length > 0) updates.updation_files = fileUrls;
-
-      const { data, error } = await supabase
-        .from('tasks')
-        .update(updates)
-        .eq('id', id)
-        .select(TASK_SELECT)
-        .single();
-
-      if (error) throw error;
-      res.json(data);
-    } catch (err) {
-      console.error('Send updation error:', err.message);
-      res.status(500).json({ error: err.message || 'Could not send updation' });
-    }
-  }
-);
-
-// ─── Reschedule task ──────────────────────────────────────────────────────────
-router.patch('/:id/reschedule', async (req, res) => {
+// ----------------------------- send updation (verifier/admin: request changes with a note) -----------------------------
+router.patch('/:id/send-updation', async (req, res) => {
   try {
     const { id } = req.params;
-    const { new_date, reason } = req.body || {};
+    const { note } = req.body || {};
 
-    if (!new_date) return res.status(400).json({ error: 'New date is required' });
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'Please write an updation note before sending' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, verifier_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isChosenVerifier = existing.verifier_id === req.user.id;
+    if (!isChosenVerifier && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You are not the verifier for this task' });
+    }
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({ target_date: new_date, reschedule_reason: reason || null })
+      .update({
+        verification_status: 'Updation Required',
+        updation_note: note.trim(),
+        status: 'In Progress'
+      })
       .eq('id', id)
       .select(TASK_SELECT)
       .single();
@@ -381,45 +451,68 @@ router.patch('/:id/reschedule', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (err) {
-    console.error('Reschedule task error:', err.message);
+    console.error('Send updation error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not send updation request' });
+  }
+});
+
+// ----------------------------- reschedule (only when admin allowed it) -----------------------------
+router.patch('/:id/reschedule', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { target_date } = req.body || {};
+    if (!target_date) {
+      return res.status(400).json({ error: 'Please pick a new target date' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, assigned_to, rescheduling_possible').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    if (!existing.rescheduling_possible && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Rescheduling was not allowed for this task' });
+    }
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only reschedule your own tasks' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ target_date })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reschedule error:', err.message);
     res.status(500).json({ error: err.message || 'Could not reschedule task' });
   }
 });
 
-// ─── Overdue extend ───────────────────────────────────────────────────────────
-router.patch('/:id/overdue-extend', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { new_date, reason } = req.body || {};
-
-    if (!new_date) return res.status(400).json({ error: 'New date is required' });
-
-    const { data, error } = await supabase
-      .from('tasks')
-      .update({ target_date: new_date, reschedule_reason: reason || null })
-      .eq('id', id)
-      .select(TASK_SELECT)
-      .single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    console.error('Overdue extend error:', err.message);
-    res.status(500).json({ error: err.message || 'Could not extend task deadline' });
-  }
-});
-
-// ─── Reassign task (admin only) ───────────────────────────────────────────────
+// ----------------------------- reassign (admin only) -----------------------------
 router.patch('/:id/reassign', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { employee_id } = req.body || {};
-
-    if (!employee_id) return res.status(400).json({ error: 'Please select an employee' });
+    const { assigned_to } = req.body || {};
+    if (!assigned_to) {
+      return res.status(400).json({ error: 'Please choose who to reassign this task to' });
+    }
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({ assigned_to: employee_id, status: 'Pending', verification_status: 'Not Submitted' })
+      .update({
+        assigned_to,
+        status: 'Pending',
+        status_note: null,
+        verifier_id: null,
+        verification_status: null,
+        verification_note: null,
+        correction_voice_url: null
+      })
       .eq('id', id)
       .select(TASK_SELECT)
       .single();
@@ -429,6 +522,134 @@ router.patch('/:id/reassign', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Reassign task error:', err.message);
     res.status(500).json({ error: err.message || 'Could not reassign task' });
+  }
+});
+
+// ----------------------------- admin report -----------------------------
+// GET /tasks/report?range=day|week|month|custom&from=DATE&to=DATE
+router.get('/report', requireAdmin, async (req, res) => {
+  try {
+    const { range, from, to } = req.query;
+
+    let startDate, endDate;
+    const now = new Date();
+
+    if (range === 'day') {
+      startDate = new Date(now); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(now); endDate.setHours(23, 59, 59, 999);
+    } else if (range === 'week') {
+      const day = now.getDay();
+      startDate = new Date(now); startDate.setDate(now.getDate() - day); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(startDate); endDate.setDate(startDate.getDate() + 6); endDate.setHours(23, 59, 59, 999);
+    } else if (range === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (range === 'custom' && from && to) {
+      startDate = new Date(from); startDate.setHours(0, 0, 0, 0);
+      endDate   = new Date(to);   endDate.setHours(23, 59, 59, 999);
+    } else {
+      // default: current month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    const { data: tasks, error } = await supabase
+      .from('tasks')
+      .select(`
+        id, description, status, priority,
+        created_at, accepted_at, sent_for_verification_at, verified_at, rejected_at,
+        hours_to_complete, target_date,
+        verification_status,
+        project:projects ( id, name ),
+        task_type:task_types ( id, name ),
+        department:departments ( id, name ),
+        assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
+        assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
+        verifier:users!tasks_verifier_id_fkey ( id, full_name )
+      `)
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Helper: diff in hours between two timestamps
+    function hrsBetween(a, b) {
+      if (!a || !b) return null;
+      return Math.round(((new Date(b) - new Date(a)) / 36e5) * 10) / 10;
+    }
+
+    // Enrich each task with computed time fields
+    const enriched = tasks.map(t => ({
+      ...t,
+      time_to_accept_hrs:   hrsBetween(t.created_at, t.accepted_at),
+      time_to_submit_hrs:   hrsBetween(t.accepted_at, t.sent_for_verification_at),
+      time_to_verify_hrs:   hrsBetween(t.sent_for_verification_at, t.verified_at),
+      total_cycle_hrs:      hrsBetween(t.created_at, t.verified_at || t.rejected_at)
+    }));
+
+    // Group by employee → project
+    const byEmployee = {};
+    for (const t of enriched) {
+      const empId   = t.assigned_to_user?.id   || 'unknown';
+      const empName = t.assigned_to_user?.full_name || 'Unknown';
+      const projId  = t.project?.id   || 'no-project';
+      const projName = t.project?.name || 'No project';
+
+      if (!byEmployee[empId]) {
+        byEmployee[empId] = { id: empId, name: empName, projects: {}, totalTasks: 0 };
+      }
+      const emp = byEmployee[empId];
+      emp.totalTasks++;
+
+      if (!emp.projects[projId]) {
+        emp.projects[projId] = { id: projId, name: projName, tasks: [] };
+      }
+      emp.projects[projId].tasks.push(t);
+    }
+
+    // Convert to array form + compute project-level summaries
+    const report = Object.values(byEmployee).map(emp => {
+      const projects = Object.values(emp.projects).map(proj => {
+        const tasks = proj.tasks;
+        const completed  = tasks.filter(t => t.status === 'Completed').length;
+        const pending    = tasks.filter(t => t.status === 'Pending').length;
+        const inProgress = tasks.filter(t => t.status === 'In Progress').length;
+        const rejected   = tasks.filter(t => t.status === 'Rejected').length;
+
+        const avgCycle = (() => {
+          const valid = tasks.map(t => t.total_cycle_hrs).filter(h => h !== null);
+          return valid.length ? Math.round((valid.reduce((a,b)=>a+b,0) / valid.length) * 10) / 10 : null;
+        })();
+
+        return { ...proj, tasks, summary: { total: tasks.length, completed, pending, inProgress, rejected, avgCycleHrs: avgCycle } };
+      });
+
+      return { ...emp, projects };
+    });
+
+    res.json({ range: range || 'month', from: startDate.toISOString(), to: endDate.toISOString(), report });
+  } catch (err) {
+    console.error('Report error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not generate report' });
+  }
+});
+
+// ----------------------------- mark as ticket raised (auto-called when ticket is raised) -----------------------------
+router.patch('/:id/ticket-raised', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status: 'Ticket Raised' })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Ticket raised status error:', err.message);
+    res.status(500).json({ error: 'Could not update task status' });
   }
 });
 
