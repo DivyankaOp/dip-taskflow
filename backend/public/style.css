@@ -1246,3 +1246,127 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   border-color: var(--primary, #6d28d9);
   background: var(--surface, #fff);
 }
+/* ================================================================
+   NAV BADGE (red count on sidebar items — e.g. open tickets)
+   ================================================================ */
+.nav-btn { position: relative; }  /* ensure badge positions correctly */
+.nav-badge {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--rose);
+  color: #fff;
+  font-size: 0.60rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  line-height: 1;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.nav-btn.active .nav-badge {
+  background: #fff;
+  color: var(--primary-dk);
+}
+
+/* ================================================================
+   OVERDUE DRAWER (right-side panel with Today / Pending tabs)
+   ================================================================ */
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(10,12,25,.45);
+  z-index: 50;
+  display: flex; justify-content: flex-end;
+  backdrop-filter: blur(2px);
+}
+.drawer-backdrop[hidden] { display: none; }
+
+.drawer-panel {
+  background: var(--surface);
+  width: 420px; max-width: 100%;
+  height: 100%;
+  display: flex; flex-direction: column;
+  box-shadow: -20px 0 60px rgba(0,0,0,.18);
+  animation: drawer-enter .2s ease-out;
+}
+@keyframes drawer-enter {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  background: var(--surface); z-index: 2;
+}
+.drawer-header h3 { font-size: 1rem; color: var(--ink); }
+
+.drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 57px;
+  background: var(--surface); z-index: 1;
+}
+.drawer-tab {
+  flex: 1; padding: 11px 10px;
+  border: none; background: none;
+  font-weight: 600; font-size: 0.85rem;
+  cursor: pointer; color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.drawer-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.drawer-body {
+  flex: 1; padding: 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.drawer-task-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.drawer-task-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.drawer-extension-note {
+  font-size: 0.78rem; color: var(--emerald);
+  background: var(--emerald-lt);
+  border: 1px solid var(--emerald-bd);
+  border-radius: 6px; padding: 7px 11px;
+  margin-top: 4px; line-height: 1.5;
+}
+
+/* ================================================================
+   SOURCE BADGES (Assignment vs Verification — used in Overdue table)
+   ================================================================ */
+.source-badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 0.67rem; font-weight: 700;
+  letter-spacing: .04em; white-space: nowrap;
+}
+.source-assignment {
+  background: var(--blue-lt);  color: #1E40AF;
+  border: 1px solid var(--blue-bd);
+}
+.source-verification {
+  background: var(--amber-lt); color: #78350F;
+  border: 1px solid var(--amber-bd);
+}
