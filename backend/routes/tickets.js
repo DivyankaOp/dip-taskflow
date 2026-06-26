@@ -45,30 +45,37 @@ async function getOrCreate(table, name) {
 }
 
 // Auto-creates a follow-up task for the MIS executive when a ticket lands in
-// a category they need to chase (Technical / Access). Best-effort: failures
-// here must never block the ticket itself from being saved.
-//
-// FIX: raisedById is now passed as an explicit param so the task's assigned_by
-// field uses req.user.id directly (not ticket.raised_by which may be stale).
+// a Technical / Access category. The task shows up in the MIS executive's
+// normal "My Tasks" view because assigned_to = misUser.id.
 async function createMisFollowUpTask(ticket, raisedByName, raisedById) {
+  // Find the first active MIS executive
   const { data: misUser, error: misErr } = await supabase
     .from('users')
-    .select('id')
+    .select('id, full_name')
     .eq('is_mis_executive', true)
     .eq('is_active', true)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
-  if (misErr || !misUser) return null; // no MIS executive configured — skip silently
 
+  if (misErr) {
+    console.error('MIS user lookup error:', misErr.message);
+    return null;
+  }
+  if (!misUser) {
+    console.warn('No active MIS executive found — skipping follow-up task creation');
+    return null;
+  }
+
+  // Ensure the required master-data rows exist (creates them once if missing)
   const [department_id, project_id, task_type_id] = await Promise.all([
     getOrCreate('departments', 'MIS Support'),
-    getOrCreate('projects', 'Internal Support'),
-    getOrCreate('task_types', 'Ticket Follow-up')
+    getOrCreate('projects',    'Internal Support'),
+    getOrCreate('task_types',  'Ticket Follow-up')
   ]);
 
   const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + 1); // default: next day
+  targetDate.setDate(targetDate.getDate() + 1); // due: next day
 
   const { data: task, error: taskErr } = await supabase
     .from('tasks')
@@ -76,17 +83,24 @@ async function createMisFollowUpTask(ticket, raisedByName, raisedById) {
       department_id,
       project_id,
       task_type_id,
-      assigned_to: misUser.id,
-      assigned_by: raisedById,   // ← use caller's user ID directly (the fix)
-      description: `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
-      target_date: targetDate.toISOString().slice(0, 10),
-      priority: 'High',
+      assigned_to:          misUser.id,
+      assigned_by:          raisedById,
+      description:          `[Ticket #${ticket.id}] ${ticket.category} issue raised by ${raisedByName}: ${ticket.description}`,
+      target_date:          targetDate.toISOString().slice(0, 10),
+      priority:             'High',
       rescheduling_possible: true,
-      status: 'Pending'
+      status:               'Pending',
+      verification_status:  'Not Submitted'   // ← FIX: was missing, caused silent DB error
     })
     .select('id')
     .single();
-  if (taskErr) throw taskErr;
+
+  if (taskErr) {
+    console.error('MIS follow-up task insert error:', taskErr.message, taskErr.details, taskErr.hint);
+    throw taskErr;
+  }
+
+  console.log(`✅ MIS follow-up task #${task.id} created for ${misUser.full_name} (ticket #${ticket.id})`);
   return task.id;
 }
 
@@ -116,9 +130,9 @@ router.post('/', upload.single('media'), async (req, res) => {
     const { data, error } = await supabase
       .from('tickets')
       .insert({
-        task_id: task_id || null,
-        raised_by: req.user.id,
-        category: category.trim(),
+        task_id:     task_id || null,
+        raised_by:   req.user.id,
+        category:    category.trim(),
         description: description.trim(),
         attachment_url,
         status: 'Open'
@@ -128,7 +142,7 @@ router.post('/', upload.single('media'), async (req, res) => {
 
     if (error) throw error;
 
-    // If ticket is linked to a task, update task status to 'Ticket Raised'
+    // If ticket is linked to a task, update that task's status to 'Ticket Raised'
     if (task_id) {
       try {
         await supabase
@@ -138,17 +152,17 @@ router.post('/', upload.single('media'), async (req, res) => {
       } catch (_) { /* non-critical — ticket is already saved */ }
     }
 
-    // Technical / Access issues automatically spin up a follow-up task for
-    // the MIS executive so it shows up in their normal task list — non-critical.
+    // Technical / Access → auto-create a follow-up task for the MIS executive
     if (MIS_TASK_CATEGORIES.has(category.trim())) {
       try {
         await createMisFollowUpTask(
           data,
           req.user.full_name || 'an employee',
-          req.user.id          // ← pass the caller's ID explicitly
+          req.user.id
         );
       } catch (misErr) {
-        console.error('MIS follow-up task error:', misErr.message);
+        // Non-critical: log loudly but don't fail the ticket response
+        console.error('MIS follow-up task creation failed:', misErr.message);
       }
     }
 
@@ -164,7 +178,9 @@ router.post('/', upload.single('media'), async (req, res) => {
 // Everyone else → sees only their own
 router.get('/', async (req, res) => {
   try {
-    let seeAll = req.user.role === 'admin';
+    // Check JWT first (fast path), then DB for non-admin users
+    let seeAll = req.user.role === 'admin' || !!req.user.is_mis_executive;
+
     if (!seeAll) {
       const { data: me, error: meErr } = await supabase
         .from('users')
@@ -193,7 +209,6 @@ router.get('/', async (req, res) => {
 // ─── Solve / resolve (admin always; others need can_resolve_tickets flag) ────
 router.patch('/:id/solve', async (req, res) => {
   try {
-    // Admins bypass permission check; others need the flag
     if (req.user.role !== 'admin') {
       const { data: me, error: meErr } = await supabase
         .from('users')
@@ -214,8 +229,8 @@ router.patch('/:id/solve', async (req, res) => {
     const { data, error } = await supabase
       .from('tickets')
       .update({
-        status: 'Resolved',
-        solution: solution.trim(),
+        status:      'Resolved',
+        solution:    solution.trim(),
         solution_by: req.user.id,
         solution_at: new Date().toISOString()
       })
