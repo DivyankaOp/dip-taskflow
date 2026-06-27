@@ -1340,7 +1340,175 @@
       </div>
     </div>
   </div>
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  PLACEMENT:  Paste both sections AFTER the closing </section> of
+              view-drawings-all  (around line 700 in index.html),
+              and BEFORE the closing </main> tag.
+  ══════════════════════════════════════════════════════════════════════════════
+-->
 
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MONTHLY REPORTS — UPLOAD VIEW
+     id must match exactly: view-monthly-report-upload
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<section id="view-monthly-report-upload" class="view" hidden>
+  <div class="view-heading">
+    <h2 class="view-title">📤 Upload Monthly Report</h2>
+    <p class="view-sub">Select the month, year and project, then drag &amp; drop the report folder.</p>
+  </div>
+
+  <div class="drawing-form-card">
+    <p id="mrFormMsg" class="form-error" hidden></p>
+    <form id="monthlyReportForm" autocomplete="off">
+
+      <!-- Row 1: Month + Year -->
+      <div class="form-row">
+        <div class="field">
+          <label for="mr-month">Month <span class="req">*</span></label>
+          <select id="mr-month" required>
+            <option value="">Select Month</option>
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="mr-year">Year <span class="req">*</span></label>
+          <select id="mr-year" required>
+            <!-- Populated by JS in loadMonthlyReportUploadView() -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Project -->
+      <div class="field">
+        <label for="mr-project">Project Name <span class="req">*</span></label>
+        <select id="mr-project" required>
+          <option value="">Select Project</option>
+          <!-- Populated by JS -->
+        </select>
+      </div>
+
+      <!-- Row 3: Folder drop zone -->
+      <div class="field">
+        <label>📁 Upload Folder <span class="req">*</span></label>
+        <div class="mr-dropzone" id="mrDropzone">
+          <div class="mr-dropzone-icon">📁</div>
+          <div class="mr-dropzone-text">Drag &amp; Drop folder here</div>
+          <div class="mr-dropzone-sub">Or click to browse folder</div>
+          <div class="mr-dropzone-limit">Max total size: 5 GB</div>
+          <!-- webkitdirectory lets the user pick an entire folder -->
+          <input type="file" id="mrFolderInput" webkitdirectory multiple style="display:none" />
+        </div>
+        <p id="mrFileCount" class="form-note" hidden></p>
+      </div>
+
+      <!-- Progress bar (shown while uploading) -->
+      <div id="mrProgressWrap" hidden style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--muted);margin-bottom:6px">
+          <span>Uploading…</span>
+          <span id="mrProgressPct">0%</span>
+        </div>
+        <div class="mr-progress-bar">
+          <div class="mr-progress-fill" id="mrProgressFill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="modal-footer" style="margin-top:20px;padding:0">
+        <button type="button" id="mrResetBtn" class="ghost-btn-text">Cancel</button>
+        <button type="submit" id="mrSubmitBtn" class="primary-btn">📤 Upload Report</button>
+      </div>
+
+    </form>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MONTHLY REPORTS — ALL VIEW
+     id must match exactly: view-monthly-report-all
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<section id="view-monthly-report-all" class="view" hidden>
+  <div class="view-heading">
+    <h2 class="view-title">📁 All Monthly Reports</h2>
+    <p class="view-sub">Browse and manage all uploaded monthly reports across projects.</p>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-panel" style="margin-bottom:16px">
+    <div class="filter-row">
+      <div class="filter-field">
+        <label class="filter-label">Project</label>
+        <select id="mrFilterProject">
+          <option value="">All Projects</option>
+          <!-- Populated by JS -->
+        </select>
+      </div>
+      <div class="filter-field">
+        <label class="filter-label">Month</label>
+        <select id="mrFilterMonth">
+          <option value="">All Months</option>
+          <option value="1">January</option>
+          <option value="2">February</option>
+          <option value="3">March</option>
+          <option value="4">April</option>
+          <option value="5">May</option>
+          <option value="6">June</option>
+          <option value="7">July</option>
+          <option value="8">August</option>
+          <option value="9">September</option>
+          <option value="10">October</option>
+          <option value="11">November</option>
+          <option value="12">December</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label class="filter-label">Year</label>
+        <select id="mrFilterYear">
+          <option value="">All Years</option>
+          <!-- Populated by JS -->
+        </select>
+      </div>
+      <button id="mrApplyFilter" class="primary-btn primary-btn-inline" style="height:36px">Apply</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-card">
+    <div class="table-scroll">
+      <table class="data-table" id="monthlyReportsTable">
+        <thead>
+          <tr>
+            <th class="col-sr">SR</th>
+            <th>Month</th>
+            <th>Year</th>
+            <th>Project</th>
+            <th>Files</th>
+            <th>Size</th>
+            <th>Uploaded By</th>
+            <th>Upload Date</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="monthlyReportsTableBody">
+          <tr><td colspan="9" class="empty-state">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
   <script src="app.js?v=4"></script>
 </body>
 </html>
