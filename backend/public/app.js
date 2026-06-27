@@ -219,17 +219,14 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
     method, headers,
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
-//  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
-  if (res.status === 401) {
-  if (state.token) { logout(); throw new Error('Session expired, please log in again'); }
-  throw new Error(data.error || 'Invalid username or password');
-}
   const data = await res.json().catch(() => ({}));
-
+  if (res.status === 401) {
+    if (!path.includes('/auth/login')) { logout(); throw new Error('Session expired, please log in again'); }
+    throw new Error(data.error || 'Invalid username or password');
+  }
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
 }
-
 function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
