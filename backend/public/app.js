@@ -211,6 +211,19 @@ function showToast(message, type = '') {
   showToast._t = setTimeout(() => { els.toast.hidden = true; }, 3200);
 }
 
+// async function api(path, { method = 'GET', body, isForm = false } = {}) {
+//   const headers = {};
+//   if (state.token) headers.Authorization = `Bearer ${state.token}`;
+//   if (!isForm && body) headers['Content-Type'] = 'application/json';
+//   const res = await fetch(`${API_BASE}${path}`, {
+//     method, headers,
+//     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
+//   });
+//   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
+//   const data = await res.json().catch(() => ({}));
+//   if (!res.ok) throw new Error(data.error || 'Something went wrong');
+//   return data;
+// }
 async function api(path, { method = 'GET', body, isForm = false } = {}) {
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -219,12 +232,15 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
     method, headers,
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
-  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
+  // ✅ FIX: login route pe 401 aaye toh logout() mat karo
+  if (res.status === 401 && path !== '/auth/login') {
+    logout();
+    throw new Error('Session expired, please log in again');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
 }
-
 function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
