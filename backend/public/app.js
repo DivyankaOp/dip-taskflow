@@ -219,8 +219,13 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
     method, headers,
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
-  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
+//  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
+  if (res.status === 401) {
+  if (state.token) { logout(); throw new Error('Session expired, please log in again'); }
+  throw new Error(data.error || 'Invalid username or password');
+}
   const data = await res.json().catch(() => ({}));
+
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
 }
@@ -427,7 +432,15 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
   }
 }
-
+// Monthly Reports — admin only
+  if (isAdmin) {
+    const mrLabel = document.createElement('div');
+    mrLabel.className = 'nav-section-label';
+    mrLabel.textContent = 'Monthly Reports';
+    els.navList.appendChild(mrLabel);
+    els.navList.appendChild(makeNavButton('monthly-report-upload', '📤 Upload Monthly Report'));
+    els.navList.appendChild(makeNavButton('monthly-report-all',    '📁 All Monthly Reports'));
+  }
 function makeNavButton(key, label, badge) {
   const btn = document.createElement('button');
   btn.className = 'nav-btn'; btn.dataset.view = key;
@@ -540,6 +553,8 @@ function switchView(viewKey) {
   if (viewKey === 'drawings-add')  renderDrawingAddView();
   if (viewKey === 'drawings-all')  loadAllDrawings();
   if (viewKey === 'daily-report')  loadDailyReport();
+  if (viewKey === 'monthly-report-upload') loadMonthlyReportUploadView();
+  if (viewKey === 'monthly-report-all')    loadAllMonthlyReports();
 }
 
 // ─── master data (admin) ─────────────────────────────────────────────────────
