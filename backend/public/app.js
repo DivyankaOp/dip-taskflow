@@ -431,7 +431,7 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('drawings-add', '➕ Add Drawing'));
     els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
   }
-}
+
 // Monthly Reports — admin only
   if (isAdmin) {
     const mrLabel = document.createElement('div');
@@ -441,6 +441,7 @@ function buildNav() {
     els.navList.appendChild(makeNavButton('monthly-report-upload', '📤 Upload Monthly Report'));
     els.navList.appendChild(makeNavButton('monthly-report-all',    '📁 All Monthly Reports'));
   }
+}
 function makeNavButton(key, label, badge) {
   const btn = document.createElement('button');
   btn.className = 'nav-btn'; btn.dataset.view = key;
