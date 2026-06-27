@@ -421,16 +421,12 @@ function buildNav() {
   // Drawings — admin only
   if (isAdmin) {
     const drawLabel = document.createElement('div');
-    const mrLabel = document.createElement('div');
-    mrLabel.className = 'nav-section-label';
-    mrLabel.textContent = 'Monthly Reports';
+   
     drawLabel.className = 'nav-section-label'; drawLabel.textContent = 'Drawings';
     els.navList.appendChild(drawLabel);
     els.navList.appendChild(makeNavButton('drawings-add', '➕ Add Drawing'));
     els.navList.appendChild(makeNavButton('drawings-all', '📐 All Drawings'));
-    els.navList.appendChild(mrLabel);
-    els.navList.appendChild(makeNavButton('monthly-report-upload', '📤 Upload Monthly Report'));
-    els.navList.appendChild(makeNavButton('monthly-report-all',    '📁 All Monthly Reports'));
+  
   }
 }
 // Monthly Reports — admin only
