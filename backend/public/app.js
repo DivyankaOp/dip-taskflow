@@ -502,17 +502,26 @@ async function refreshNavBadges() {
       const tickets = await api('/tickets');
       const openTickets = tickets.filter(t => t.status === 'Open').length;
       setNavBadge('tickets-open', openTickets);
+
+      // Recurring tasks: today's undone tasks + any backlog from earlier days
+      const myRecurring = await api('/recurring-tasks/my');
+      const recurringPending = myRecurring.reduce((sum, t) => {
+        const todayPending = (t.fires_today && t.today_instance?.status !== 'Completed') ? 1 : 0;
+        return sum + todayPending + (t.overdue_count || 0);
+      }, 0);
+      setNavBadge('recurring', recurringPending);
     } else {
       // Admin: all tasks pending, overdue, verifications, open tickets
       const allTasks = await api('/tasks/all');
       const now = new Date();
       const pendingCount = allTasks.filter(t => t.status === 'Pending' || t.verification_status === 'Pending Verification').length;
+      const recurringOverdue = await api('/recurring-tasks/overdue');
       const overdueCount = allTasks.filter(t => {
         if (!t.target_date) return false;
         if (t.status === 'Completed' || t.status === 'Rejected') return false;
         if (t.verification_status === 'Verified') return false;
         return new Date(t.target_date) < now;
-      }).length;
+      }).length + recurringOverdue.length;
       setNavBadge('all', pendingCount);
       setNavBadge('overdue', overdueCount);
 
@@ -796,7 +805,66 @@ async function loadOverdueTasks() {
     overdueTasksCache = overdue;
     renderOverdueTasksTable(els.overdueTasksList, overdue);
     renderTaskList(els.overdueTasksCards, overdue, { showAssignee: true, allowActions: true });
+
+    await loadRecurringOverdueBlock();
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Recurring tasks live in their own table (recurring_task_instances), not
+// in `tasks`, so they can't just be merged into the normal overdue rows —
+// they get their own read-only block underneath instead. To act on one
+// (mark it done), the admin goes to the Recurring tasks tab.
+async function loadRecurringOverdueBlock() {
+  const block = document.getElementById('recurringOverdueBlock');
+  const tbody = document.getElementById('recurringOverdueList');
+  const cards = document.getElementById('recurringOverdueCards');
+  if (!block) return;
+
+  try {
+    const items = await api('/recurring-tasks/overdue');
+    block.hidden = items.length === 0;
+    if (!items.length) return;
+
+    tbody.innerHTML = '';
+    cards.innerHTML = '';
+    items.forEach((item, i) => {
+      const daysOverdue = Math.floor((new Date() - new Date(item.due_date)) / 86400000);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td>
+          <div class="task-detail-line"><strong>${escapeHtml(item.description ?? '')}</strong></div>
+          ${item.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(item.project.name)}</div>` : ''}
+          ${item.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(item.task_type.name)}</div>` : ''}
+        </td>
+        <td>
+          ${escapeHtml(item.due_date)}
+          <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue 🔴</div>
+        </td>
+        <td>${escapeHtml(item.assigned_to_user?.full_name ?? '—')}</td>
+        <td><span class="pill">${escapeHtml(item.priority ?? 'Medium')}</span></td>
+        <td><span class="pill pill-Rejected">Pending</span></td>
+      `;
+      tbody.appendChild(tr);
+
+      const card = document.createElement('div');
+      card.className = 'task-card';
+      card.innerHTML = `
+        <div class="task-card-header">
+          <span class="pill pill-Rejected">Pending</span>
+          <span style="font-size:12px;color:#888">${escapeHtml(item.priority ?? 'Medium')}</span>
+        </div>
+        <div class="task-card-body">
+          <div class="task-detail-line"><strong>${escapeHtml(item.description ?? '')}</strong></div>
+          <div class="task-detail-line"><span class="task-detail-label">Assigned to:</span> ${escapeHtml(item.assigned_to_user?.full_name ?? '—')}</div>
+          <div style="color:#d33;font-size:0.8rem;font-weight:600">Was due ${escapeHtml(item.due_date)} — ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue 🔴</div>
+        </div>
+      `;
+      cards.appendChild(card);
+    });
+  } catch (err) {
+    block.hidden = true;
+  }
 }
 
 // renders the admin "Overdue tasks" as a table (desktop) — adds a Verifier
@@ -2942,64 +3010,83 @@ async function loadEmployeeRecurringTasks() {
 }
 
 // Desktop table view — same data as the card list above, laid out as rows.
+// Builds one table row for a given (task, instance, isOverdue) combination.
+// Used both for today's row and for each backlog (overdue) row, so a task
+// with 3 missed days shows up as 3 separate rows, each independently doneable.
+function buildEmployeeRecurringRow(task, inst, { isOverdue = false, dueDate = null } = {}) {
+  const tr = document.createElement('tr');
+  const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
+  const completedIds = inst
+    ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
+    : [];
+  const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
+  const isLocked = !inst || inst.status === 'Completed';
+  const canAct = !isLocked;
+  const statusText = inst?.status === 'Completed' ? 'Completed'
+    : checkpoints.length === 0 ? (isOverdue ? 'Overdue' : 'Pending')
+    : `${completedIds.length}/${checkpoints.length} done`;
+  const pillClass = allDone ? 'pill-Completed'
+    : isOverdue ? 'pill-Rejected'
+    : 'pill-InProgress';
+
+  const tdTask = document.createElement('td');
+  tdTask.innerHTML = `
+    <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+    ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
+    ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+    ${isOverdue ? `<div style="color:#d33;font-size:0.8rem;font-weight:600">🔴 Due ${escapeHtml(dueDate)} — not done</div>` : ''}
+  `;
+
+  const tdFreq = document.createElement('td');
+  tdFreq.textContent = freqLabel(task);
+
+  const tdPeriod = document.createElement('td');
+  tdPeriod.style.whiteSpace = 'nowrap';
+  tdPeriod.style.fontSize = '0.8rem';
+  tdPeriod.textContent = `${task.start_date ?? '—'} → ${task.end_date ?? 'ongoing'}`;
+
+  const tdStatus = document.createElement('td');
+  tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
+  if (canAct) {
+    tdStatus.innerHTML += `
+      <div style="margin-top:6px">
+        <button class="action-btn action-accept done-btn">✅ Done</button>
+      </div>`;
+    tdStatus.querySelector('.done-btn').addEventListener('click', () => {
+      openRecurringDoneFlow(task, inst, checkpoints);
+    });
+  }
+
+  tr.append(tdTask, tdFreq, tdPeriod, tdStatus);
+  return tr;
+}
+
 function renderEmployeeRecurringTable(allTasks) {
   const tbody = document.getElementById('employeeRecurringTableBody');
   if (!tbody) return;
-  // A task completed today drops off the table immediately — same rule as
-  // the card view — and comes back automatically on its next due date.
-  const tasks = allTasks.filter(t => !(t.fires_today && t.today_instance?.status === 'Completed'));
-  if (!tasks.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No recurring tasks assigned to you</td></tr>`;
+
+  // Rows to show: today's row (if it fires today and isn't done), plus one
+  // row per missed/overdue instance from earlier days. Tasks not due today
+  // and with no backlog simply don't appear at all — nothing to act on yet.
+  const rows = [];
+  allTasks.forEach((task) => {
+    (task.overdue_instances || []).forEach((inst) => {
+      rows.push({ task, inst, isOverdue: true, dueDate: inst.due_date });
+    });
+    if (task.fires_today && task.today_instance?.status !== 'Completed') {
+      rows.push({ task, inst: task.today_instance, isOverdue: false, dueDate: null });
+    }
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">🎉 Nothing pending — you're all caught up</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
-  tasks.forEach((task) => {
-    const tr = document.createElement('tr');
-    const inst = task.today_instance;
-    const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
-    const completedIds = inst
-      ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
-      : [];
-    const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
-    const isLocked = !inst || inst.status === 'Completed';
-    const canAct = task.fires_today && !isLocked; // can this task still be acted on today?
-    const statusText = !task.fires_today ? 'Not today'
-      : inst?.status === 'Completed' ? 'Completed'
-      : checkpoints.length === 0 ? 'Pending'
-      : `${completedIds.length}/${checkpoints.length} done`;
-    const pillClass = allDone ? 'pill-Completed'
-      : !task.fires_today ? 'pill-Rejected'
-      : 'pill-InProgress';
-
-    const tdTask = document.createElement('td');
-    tdTask.innerHTML = `
-      <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
-      ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
-      ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
-    `;
-
-    const tdFreq = document.createElement('td');
-    tdFreq.textContent = freqLabel(task);
-
-    const tdPeriod = document.createElement('td');
-    tdPeriod.style.whiteSpace = 'nowrap';
-    tdPeriod.style.fontSize = '0.8rem';
-    tdPeriod.textContent = `${task.start_date ?? '—'} → ${task.end_date ?? 'ongoing'}`;
-
-    const tdStatus = document.createElement('td');
-    tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
-    if (canAct) {
-      tdStatus.innerHTML += `
-        <div style="margin-top:6px">
-          <button class="action-btn action-accept done-btn">✅ Done</button>
-        </div>`;
-      tdStatus.querySelector('.done-btn').addEventListener('click', () => {
-        openRecurringDoneFlow(task, inst, checkpoints);
-      });
-    }
-
-    tr.append(tdTask, tdFreq, tdPeriod, tdStatus);
-    tbody.appendChild(tr);
+  // Overdue rows first, so backlog can't get missed below the fold.
+  rows.sort((a, b) => (a.isOverdue === b.isOverdue) ? 0 : (a.isOverdue ? -1 : 1));
+  rows.forEach(({ task, inst, isOverdue, dueDate }) => {
+    tbody.appendChild(buildEmployeeRecurringRow(task, inst, { isOverdue, dueDate }));
   });
 }
 
@@ -3091,62 +3178,70 @@ async function openRecurringDoneFlow(task, inst, checkpoints) {
 }
 function renderEmployeeRecurringList(tasks) {
   const wrap = recEls.empList();
-  if (!tasks.length) {
-    wrap.innerHTML = `<div class="empty-state">No recurring tasks assigned to you</div>`;
-    return;
-  }
   wrap.innerHTML = '';
 
-  // Today's tasks, minus anything already completed today — a completed
-  // task drops out of the list immediately (no "Completed today" section)
-  // so the employee only ever sees what's left to do. It'll reappear here
-  // automatically on its next due date once the backend creates a fresh
-  // instance for that date.
-  const dueToday = tasks.filter(t => t.fires_today);
-  const activeToday = dueToday.filter(t => t.today_instance?.status !== 'Completed');
-  const notToday = tasks.filter(t => !t.fires_today);
+  // Backlog: every missed/overdue instance from earlier days that's still
+  // not done — this is what was silently disappearing before. Shown first
+  // so nothing gets missed.
+  const backlogEntries = [];
+  tasks.forEach(t => (t.overdue_instances || []).forEach(inst => {
+    backlogEntries.push({ task: t, inst, isOverdue: true, dueDate: inst.due_date });
+  }));
 
+  // Today's tasks, minus anything already completed today.
+  const activeToday = tasks
+    .filter(t => t.fires_today && t.today_instance?.status !== 'Completed')
+    .map(t => ({ task: t, inst: t.today_instance, isOverdue: false, dueDate: null }));
+
+  // Tasks that aren't due today AND have no backlog don't show up at all —
+  // e.g. a "Saturday only" weekly task stays fully hidden Sun–Fri.
+
+  if (!backlogEntries.length && !activeToday.length) {
+    wrap.innerHTML = `<div class="empty-state">🎉 Nothing pending — you're all caught up</div>`;
+    return;
+  }
+
+  if (backlogEntries.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'nav-section-label';
+    hdr.textContent = `Pending from before (${backlogEntries.length})`;
+    wrap.appendChild(hdr);
+    backlogEntries.forEach(e => wrap.appendChild(buildEmployeeRecurringCard(e.task, e)));
+  }
+
+  const hdr = document.createElement('div');
+  hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
+  hdr.textContent = "Today's tasks";
+  wrap.appendChild(hdr);
   if (activeToday.length) {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
-    wrap.appendChild(hdr);
-    activeToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+    activeToday.forEach(e => wrap.appendChild(buildEmployeeRecurringCard(e.task, e)));
   } else {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
-    wrap.appendChild(hdr);
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.textContent = 'Nothing due today 🎉';
     wrap.appendChild(empty);
   }
-  if (notToday.length) {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
-    hdr.textContent = 'Other recurring tasks (not due today)';
-    wrap.appendChild(hdr);
-    notToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
-  }
 }
 
-function buildEmployeeRecurringCard(task) {
+// `entry` is { inst, isOverdue, dueDate } describing which instance this
+// card represents — either today's instance, or one specific backlog day.
+function buildEmployeeRecurringCard(task, entry) {
   const card = document.createElement('div');
   card.className = 'task-card';
-  const inst = task.today_instance;
+  const { inst, isOverdue, dueDate } = entry;
   const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
   const completedIds = inst
     ? (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id)
     : [];
   const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
   const isLocked = !inst || inst.status === 'Completed';
-  const canAct = task.fires_today && !isLocked;
-  const status = !task.fires_today ? 'Not today'
-    : inst?.status === 'Completed' ? 'Completed'
-    : checkpoints.length === 0 ? 'Pending'
+  const canAct = !isLocked;
+  const status = inst?.status === 'Completed' ? 'Completed'
+    : checkpoints.length === 0 ? (isOverdue ? 'Overdue' : 'Pending')
     : `${completedIds.length}/${checkpoints.length} done`;
 
   const pillClass = allDone ? 'pill-Completed'
-    : !task.fires_today ? 'pill-Rejected'
+    : isOverdue ? 'pill-Rejected'
     : 'pill-In-Progress';
 
   card.innerHTML = `
@@ -3158,6 +3253,7 @@ function buildEmployeeRecurringCard(task) {
       <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
       ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
       ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+      ${isOverdue ? `<div style="color:#d33;font-size:0.8rem;font-weight:600">🔴 Due ${escapeHtml(dueDate)} — not done</div>` : ''}
       <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
     </div>
     ${canAct ? `
