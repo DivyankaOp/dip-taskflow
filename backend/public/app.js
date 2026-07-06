@@ -2935,7 +2935,7 @@ function renderEmployeeRecurringTable(allTasks) {
   // immediately and comes back automatically on its next due date.
   const tasks = allTasks.filter(t => t.fires_today && t.today_instance?.status !== 'Completed');
   if (!tasks.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">No recurring tasks assigned to you</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No recurring tasks assigned to you</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
@@ -2952,7 +2952,7 @@ function renderEmployeeRecurringTable(allTasks) {
     const statusText = !task.fires_today ? 'Not today'
       : inst?.status === 'Completed' ? 'Completed'
       : checkpoints.length === 0 ? 'Pending'
-      : `${completedIds.length}/${checkpoints.length} done`;
+      : `Pending (${completedIds.length}/${checkpoints.length} done)`;
     const pillClass = allDone ? 'pill-Completed'
       : !task.fires_today ? 'pill-Rejected'
       : 'pill-InProgress';
@@ -2967,6 +2967,13 @@ function renderEmployeeRecurringTable(allTasks) {
     const tdFreq = document.createElement('td');
     tdFreq.textContent = freqLabel(task);
 
+    // Row only ever shows a task that's due today, so the planned date for
+    // this instance is simply today — lets the employee see at a glance
+    // which date this pending row is for.
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.textContent = fmtDateOnly(new Date().toISOString());
+
     const tdStatus = document.createElement('td');
     tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
     if (canAct) {
@@ -2979,7 +2986,7 @@ function renderEmployeeRecurringTable(allTasks) {
       });
     }
 
-    tr.append(tdTask, tdFreq, tdStatus);
+    tr.append(tdTask, tdFreq, tdDate, tdStatus);
     tbody.appendChild(tr);
   });
 }
