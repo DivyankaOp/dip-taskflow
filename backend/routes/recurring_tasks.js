@@ -46,14 +46,7 @@ async function getOrCreateTodayInstance(recurringTaskId, dueDate) {
   return instance;
 }
 
-// How far back we'll walk to backfill missed instances for a recurring task.
-// Bounded so a very old task doesn't force us to create hundreds of rows —
-// 60 days is more than enough to surface any real backlog to the employee/admin.
-const BACKFILL_DAYS_CAP = 60;
-
 // Is today a valid fire date for this task?
-// (Despite the name, "today" is really "the date we're checking" — this
-// already works for any date, which is what makes the backfill below possible.)
 function shouldFireToday(task, today) {
   const start = new Date(task.start_date);
   const end = task.end_date ? new Date(task.end_date) : null;
@@ -75,44 +68,6 @@ function shouldFireToday(task, today) {
     return today.getDate() === start.getDate() && today.getMonth() === start.getMonth();
   }
   return false;
-}
-
-// Walks every fire-date for this task from (start_date, capped at
-// BACKFILL_DAYS_CAP days back) up to and including today, creating any
-// instance that's missing. Splits the result into:
-//   - todayInstance:    today's instance, if the task fires today
-//   - overdueInstances: any earlier instance that's still not Completed —
-//                        this is exactly the "I didn't do it, and I still
-//                        haven't done it" backlog the employee/admin needs
-//                        to see, instead of it silently disappearing.
-async function getInstancesForTask(task, today) {
-  const todayDateOnly = new Date(today.toISOString().slice(0, 10));
-
-  const start = new Date(task.start_date);
-  const end = task.end_date ? new Date(task.end_date) : null;
-
-  const earliestCap = new Date(todayDateOnly);
-  earliestCap.setDate(earliestCap.getDate() - BACKFILL_DAYS_CAP);
-  const walkStart = start > earliestCap ? start : earliestCap;
-
-  let todayInstance = null;
-  const overdueInstances = [];
-
-  for (let cursor = new Date(walkStart); cursor <= todayDateOnly; cursor.setDate(cursor.getDate() + 1)) {
-    if (end && cursor > end) break;
-    if (!shouldFireToday(task, cursor)) continue;
-
-    const instance = await getOrCreateTodayInstance(task.id, cursor);
-    const dueDateStr = cursor.toISOString().slice(0, 10);
-
-    if (cursor.getTime() === todayDateOnly.getTime()) {
-      todayInstance = instance;
-    } else if (instance.status !== 'Completed') {
-      overdueInstances.push({ ...instance, due_date: dueDateStr });
-    }
-  }
-
-  return { todayInstance, overdueInstances };
 }
 
 // ─── Admin: get saved checkpoint template for a task type ─────────────────
@@ -265,63 +220,20 @@ router.get('/my', async (req, res) => {
 
     const result = [];
     for (const task of tasks) {
-      const { todayInstance, overdueInstances } = await getInstancesForTask(task, today);
-      result.push({
-        ...task,
-        fires_today: !!todayInstance,
-        today_instance: todayInstance,
-        // Any earlier missed occurrence that's still not done — e.g. yesterday's
-        // Daily task, or last Saturday's Weekly task that never got marked done.
-        overdue_instances: overdueInstances,
-        overdue_count: overdueInstances.length
-      });
+      const fires = shouldFireToday(task, today);
+      let todayInstance = null;
+
+      if (fires) {
+        todayInstance = await getOrCreateTodayInstance(task.id, today);
+      }
+
+      result.push({ ...task, fires_today: fires, today_instance: todayInstance });
     }
 
     res.json(result);
   } catch (err) {
     console.error('My recurring tasks error:', err.message);
     res.status(500).json({ error: 'Could not load recurring tasks' });
-  }
-});
-
-// ─── Admin: overdue recurring-task backlog across every employee ──────────
-// Powers the "Recurring task backlog" block on the Overdue tasks page —
-// every not-yet-completed instance whose due_date is before today, for
-// every active recurring task, regardless of who it's assigned to.
-router.get('/overdue', requireAdmin, async (req, res) => {
-  try {
-    const today = new Date();
-
-    const { data: tasks, error } = await supabase
-      .from('recurring_tasks')
-      .select(RT_SELECT)
-      .eq('is_active', true);
-    if (error) throw error;
-
-    const result = [];
-    for (const task of tasks) {
-      const { overdueInstances } = await getInstancesForTask(task, today);
-      for (const instance of overdueInstances) {
-        result.push({
-          instance_id: instance.id,
-          recurring_task_id: task.id,
-          description: task.description,
-          priority: task.priority,
-          frequency: task.frequency,
-          due_date: instance.due_date,
-          status: instance.status,
-          project: task.project,
-          task_type: task.task_type,
-          assigned_to_user: task.assigned_to_user
-        });
-      }
-    }
-
-    result.sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
-    res.json(result);
-  } catch (err) {
-    console.error('Overdue recurring tasks error:', err.message);
-    res.status(500).json({ error: 'Could not load overdue recurring tasks' });
   }
 });
 
