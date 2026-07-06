@@ -238,6 +238,31 @@
             </div>
           </div>
           <div id="overdueTasksCards" class="task-list view-mobile-only"></div>
+
+          <div id="recurringOverdueBlock" hidden style="margin-top:28px">
+            <div class="view-heading">
+              <h3 class="view-title" style="font-size:1.05rem">🔁 Recurring task backlog</h3>
+              <p class="view-sub">Recurring tasks that weren't marked done on their due date and are still pending.</p>
+            </div>
+            <div class="table-card view-desktop-only">
+              <div class="table-scroll">
+                <table class="data-table" id="recurringOverdueTable">
+                  <thead>
+                    <tr>
+                      <th class="col-sr">Sr No</th>
+                      <th class="col-details">Task details</th>
+                      <th class="col-date">Was due</th>
+                      <th class="col-assigned">Assigned to</th>
+                      <th class="col-priority">Priority</th>
+                      <th class="col-status">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recurringOverdueList"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="recurringOverdueCards" class="task-list view-mobile-only"></div>
+          </div>
         </section>
 
 
