@@ -211,19 +211,6 @@ function showToast(message, type = '') {
   showToast._t = setTimeout(() => { els.toast.hidden = true; }, 3200);
 }
 
-// async function api(path, { method = 'GET', body, isForm = false } = {}) {
-//   const headers = {};
-//   if (state.token) headers.Authorization = `Bearer ${state.token}`;
-//   if (!isForm && body) headers['Content-Type'] = 'application/json';
-//   const res = await fetch(`${API_BASE}${path}`, {
-//     method, headers,
-//     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
-//   });
-//   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
-//   const data = await res.json().catch(() => ({}));
-//   if (!res.ok) throw new Error(data.error || 'Something went wrong');
-//   return data;
-// }
 async function api(path, { method = 'GET', body, isForm = false } = {}) {
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -232,15 +219,12 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
     method, headers,
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
-  // ✅ FIX: login route pe 401 aaye toh logout() mat karo
-  if (res.status === 401 && path !== '/auth/login') {
-    logout();
-    throw new Error('Session expired, please log in again');
-  }
+  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
 }
+
 function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
@@ -2945,11 +2929,13 @@ async function loadEmployeeRecurringTasks() {
 function renderEmployeeRecurringTable(allTasks) {
   const tbody = document.getElementById('employeeRecurringTableBody');
   if (!tbody) return;
-  // A task completed today drops off the table immediately — same rule as
-  // the card view — and comes back automatically on its next due date.
-  const tasks = allTasks.filter(t => !(t.fires_today && t.today_instance?.status === 'Completed'));
+  // Only tasks actually due today show up here at all — not-today tasks
+  // (weekly on a non-matching day, etc.) are left out entirely instead of
+  // showing a "Not today" row. A task completed today also drops off
+  // immediately and comes back automatically on its next due date.
+  const tasks = allTasks.filter(t => t.fires_today && t.today_instance?.status !== 'Completed');
   if (!tasks.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No recurring tasks assigned to you</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">No recurring tasks assigned to you</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
@@ -2981,11 +2967,6 @@ function renderEmployeeRecurringTable(allTasks) {
     const tdFreq = document.createElement('td');
     tdFreq.textContent = freqLabel(task);
 
-    const tdPeriod = document.createElement('td');
-    tdPeriod.style.whiteSpace = 'nowrap';
-    tdPeriod.style.fontSize = '0.8rem';
-    tdPeriod.textContent = `${task.start_date ?? '—'} → ${task.end_date ?? 'ongoing'}`;
-
     const tdStatus = document.createElement('td');
     tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
     if (canAct) {
@@ -2998,7 +2979,7 @@ function renderEmployeeRecurringTable(allTasks) {
       });
     }
 
-    tr.append(tdTask, tdFreq, tdPeriod, tdStatus);
+    tr.append(tdTask, tdFreq, tdStatus);
     tbody.appendChild(tr);
   });
 }
