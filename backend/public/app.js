@@ -985,6 +985,13 @@ function renderOverdueDrawer() {
 async function loadMyTasks() {
   els.myTasksTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading tasks…</td></tr>`;
   els.myTasksList.innerHTML = '<div class="empty-state">Loading tasks…</div>';
+
+  const isAdmin = state.user.role === 'admin';
+  const tabBar = document.getElementById('myTasksTabBar');
+  const ownRecurringSection = document.getElementById('myOwnRecurringSection');
+  if (tabBar) tabBar.hidden = !isAdmin;
+  if (ownRecurringSection) ownRecurringSection.hidden = !isAdmin;
+
   try {
     const allTasks = await api('/tasks/my');
     const visibleTasks = allTasks.filter(
@@ -992,7 +999,131 @@ async function loadMyTasks() {
     );
     renderMyTasksTable(els.myTasksTableBody, visibleTasks);
     renderTaskList(els.myTasksList, visibleTasks, { showAssignee: false, allowActions: true });
+
+    // Admin can be personally assigned recurring tasks too — those never
+    // showed up anywhere before (the Recurring Tasks nav item is the admin's
+    // management/CRUD view, not their own to-do list). Show them here.
+    if (isAdmin) loadMyOwnRecurringTasks();
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Admin's own recurring tasks — reuses the same renderers as the employee
+// recurring view, just pointed at this tab's own containers/refresh.
+async function loadMyOwnRecurringTasks() {
+  const tbody = document.getElementById('myOwnRecurringTableBody');
+  const wrap = document.getElementById('myOwnRecurringList');
+  if (!tbody || !wrap) return;
+  try {
+    const tasks = await api('/recurring-tasks/my');
+    renderEmployeeRecurringTable(tasks, tbody, refreshMyOwnRecurringView);
+    renderEmployeeRecurringList(tasks, wrap, refreshMyOwnRecurringView);
+  } catch (err) { /* non-critical — don't block the rest of My Tasks */ }
+}
+async function refreshMyOwnRecurringView() {
+  await loadMyOwnRecurringTasks();
+}
+
+// ─── "My Tasks" tabs (admin only): My Task ↔ Other Pending Work ───────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.my-tasks-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.my-tasks-tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.mytab;
+      document.getElementById('myTaskTabPanel').hidden = tab !== 'mytask';
+      document.getElementById('otherPendingTabPanel').hidden = tab !== 'other';
+      if (tab === 'other') loadOtherPendingWork();
+    });
+  });
+});
+
+// Read-only summary of things pending elsewhere that need the admin's
+// attention — leave requests, verifications, open tickets. Nothing can be
+// actioned from here on purpose; approve/verify/resolve from the real
+// pages, and an item disappears from this list on its own the moment it's
+// no longer pending (next time this tab loads).
+async function loadOtherPendingWork() {
+  const leavesWrap = document.getElementById('otherPendingLeavesList');
+  const verifWrap = document.getElementById('otherPendingVerificationsList');
+  const ticketsWrap = document.getElementById('otherPendingTicketsList');
+  if (!leavesWrap || !verifWrap || !ticketsWrap) return;
+
+  leavesWrap.innerHTML = '<div class="empty-state">Loading…</div>';
+  verifWrap.innerHTML = '<div class="empty-state">Loading…</div>';
+  ticketsWrap.innerHTML = '<div class="empty-state">Loading…</div>';
+
+  try {
+    const [leaves, verifications, tickets] = await Promise.all([
+      api('/leaves/all?status=Pending'),
+      api('/tasks/verifications'),
+      api('/tickets')
+    ]);
+    const openTickets = tickets.filter((t) => t.status === 'Open');
+
+    renderOtherPendingLeaves(leaves, leavesWrap);
+    renderOtherPendingVerifications(verifications, verifWrap);
+    renderOtherPendingTickets(openTickets, ticketsWrap);
+
+    const total = leaves.length + verifications.length + openTickets.length;
+    const badge = document.getElementById('otherPendingBadge');
+    if (badge) {
+      badge.hidden = total <= 0;
+      badge.textContent = total > 99 ? '99+' : total;
+    }
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderOtherPendingLeaves(leaves, wrap) {
+  if (!leaves.length) {
+    wrap.innerHTML = `<div class="empty-state"><span class="emoji">🎉</span>No pending leave requests</div>`;
+    return;
+  }
+  wrap.innerHTML = '';
+  leaves.forEach((leave) => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <span class="pill ${leavePillClass(leave.status)}">${escapeHtml(leave.status)}</span>
+      </div>
+      <div class="ticket-desc"><strong>${escapeHtml(leave.user?.full_name ?? '—')}</strong> · ${escapeHtml(leaveDateRangeLabel(leave))}</div>
+      <p class="ticket-desc">${escapeHtml(leave.reason)}</p>
+      <div class="ticket-meta">Applied ${fmtDate(leave.created_at)}</div>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+function renderOtherPendingVerifications(tasks, wrap) {
+  if (!tasks.length) {
+    wrap.innerHTML = `<div class="empty-state"><span class="emoji">🎉</span>No pending verifications</div>`;
+    return;
+  }
+  renderTaskList(wrap, tasks, { showAssignee: true, allowActions: false, verificationMode: true });
+}
+
+function renderOtherPendingTickets(tickets, wrap) {
+  if (!tickets.length) {
+    wrap.innerHTML = `<div class="empty-state"><span class="emoji">🎉</span>No open tickets</div>`;
+    return;
+  }
+  wrap.innerHTML = '';
+  tickets.forEach((ticket) => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    const catLabel = TICKET_CATEGORY_LABELS[ticket.category] || ticket.category || '';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <div class="ticket-top-left">
+          <span class="pill pill-Pending">${escapeHtml(ticket.status)}</span>
+          ${catLabel ? `<span class="ticket-category-chip">${escapeHtml(catLabel)}</span>` : ''}
+        </div>
+      </div>
+      <p class="ticket-desc">${escapeHtml(ticket.description)}</p>
+      <div class="ticket-meta">Raised by <strong>${escapeHtml(ticket.raised_by_user?.full_name ?? '—')}</strong> · ${fmtDate(ticket.created_at)}</div>
+    `;
+    wrap.appendChild(card);
+  });
 }
 
 // renders "My tasks" as a table (desktop). Same columns as All Tasks, minus
@@ -2835,13 +2966,16 @@ function freqLabel(task) {
 function renderAdminRecurringTable(tasks) {
   const tbody = recEls.adminTable();
   if (!tasks.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No recurring tasks yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">No recurring tasks yet</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
   tasks.forEach(task => {
     const tr = document.createElement('tr');
     const cpCount = (task.checkpoints || []).length;
+    const overdueCell = task.is_overdue
+      ? `<span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''} overdue</span>`
+      : `<span style="color:#aaa">—</span>`;
     tr.innerHTML = `
       <td><strong>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong></td>
       <td style="max-width:200px">${escapeHtml(task.description?.slice(0,80) ?? '—')}${task.description?.length > 80 ? '…' : ''}</td>
@@ -2849,6 +2983,7 @@ function renderAdminRecurringTable(tasks) {
       <td style="font-size:12px">${escapeHtml(task.start_date ?? '—')} → ${escapeHtml(task.end_date ?? 'ongoing')}</td>
       <td>${cpCount ? `${cpCount} checkpoint${cpCount>1?'s':''}` : '<span style="color:#aaa">None</span>'}</td>
       <td><span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td>${overdueCell}</td>
       <td class="row-actions"></td>
     `;
     const actCell = tr.lastElementChild;
@@ -2881,6 +3016,7 @@ function renderAdminRecurringCards(tasks) {
         <div class="task-detail-line"><span class="task-detail-label">Task:</span> ${escapeHtml(task.description?.slice(0,100) ?? '—')}${task.description?.length>100?'…':''}</div>
         <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
         <div class="task-detail-line"><span class="task-detail-label">Checkpoints:</span> ${cpCount ? `${cpCount}` : 'None'}</div>
+        ${task.is_overdue ? `<div class="task-detail-line"><span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''} overdue</span></div>` : ''}
       </div>
       <div class="task-card-actions">
         <button class="action-btn action-accept edit-rec-btn">✏️ Edit</button>
@@ -2925,9 +3061,19 @@ async function loadEmployeeRecurringTasks() {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+// Default refresh used after marking a recurring task done from the main
+// "My recurring tasks" page (as opposed to the admin's own-tasks tab inside
+// "My Tasks", which uses refreshMyOwnRecurringView instead — see below).
+async function refreshMainRecurringView() {
+  const refreshed = await api('/recurring-tasks/my');
+  renderEmployeeRecurringList(refreshed);
+  renderEmployeeRecurringTable(refreshed);
+}
+
 // Desktop table view — same data as the card list above, laid out as rows.
-function renderEmployeeRecurringTable(allTasks) {
-  const tbody = document.getElementById('employeeRecurringTableBody');
+// tbody/refreshFn are overridable so this same renderer can also be reused
+// for an admin's own recurring tasks inside the "My Tasks" tab.
+function renderEmployeeRecurringTable(allTasks, tbody = document.getElementById('employeeRecurringTableBody'), refreshFn = refreshMainRecurringView) {
   if (!tbody) return;
   // Backend already sends exactly the rows that belong here: one per
   // pending due date (including any missed/backdated days, each keeping
@@ -2982,7 +3128,7 @@ function renderEmployeeRecurringTable(allTasks) {
           <button class="action-btn action-accept done-btn">✅ Done</button>
         </div>`;
       tdStatus.querySelector('.done-btn').addEventListener('click', () => {
-        openRecurringDoneFlow(task, inst, checkpoints);
+        openRecurringDoneFlow(task, inst, checkpoints, refreshFn);
       });
     }
 
@@ -2997,15 +3143,13 @@ function renderEmployeeRecurringTable(allTasks) {
 // and closes it. On completion the task drops out of the active list —
 // renderEmployeeRecurringList/-Table already do this automatically once the
 // refreshed data shows status: 'Completed'.
-async function openRecurringDoneFlow(task, inst, checkpoints) {
+async function openRecurringDoneFlow(task, inst, checkpoints, refresh = refreshMainRecurringView) {
   if (!inst) return;
 
   if (checkpoints.length === 0) {
     try {
       const updated = await api(`/recurring-tasks/instances/${inst.id}/complete`, { method: 'POST' });
-      const refreshed = await api('/recurring-tasks/my');
-      renderEmployeeRecurringList(refreshed);
-      renderEmployeeRecurringTable(refreshed);
+      await refresh();
       if (updated.status === 'Completed') showToast('Task marked as done ✅', 'success');
     } catch (err) {
       showToast(err.message, 'error');
@@ -3057,9 +3201,7 @@ async function openRecurringDoneFlow(task, inst, checkpoints) {
         { method: 'POST', body: { checkpoint_ids: checkedIds } }
       );
       close();
-      const refreshed = await api('/recurring-tasks/my');
-      renderEmployeeRecurringList(refreshed);
-      renderEmployeeRecurringTable(refreshed);
+      await refresh();
       if (updated.status === 'Completed') {
         showToast('All checkpoints done — task completed! ✅', 'success');
       } else {
@@ -3077,8 +3219,7 @@ async function openRecurringDoneFlow(task, inst, checkpoints) {
 
   modal.hidden = false;
 }
-function renderEmployeeRecurringList(tasks) {
-  const wrap = recEls.empList();
+function renderEmployeeRecurringList(tasks, wrap = recEls.empList(), refreshFn = refreshMainRecurringView) {
   if (!tasks.length) {
     wrap.innerHTML = `<div class="empty-state">No recurring tasks assigned to you</div>`;
     return;
@@ -3096,7 +3237,7 @@ function renderEmployeeRecurringList(tasks) {
     const hdr = document.createElement('div');
     hdr.className = 'nav-section-label'; hdr.textContent = 'Overdue';
     wrap.appendChild(hdr);
-    overdue.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+    overdue.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t, refreshFn)));
   }
 
   const hdr = document.createElement('div');
@@ -3104,7 +3245,7 @@ function renderEmployeeRecurringList(tasks) {
   hdr.textContent = "Today's tasks";
   wrap.appendChild(hdr);
   if (todays.length) {
-    todays.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+    todays.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t, refreshFn)));
   } else {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -3113,7 +3254,7 @@ function renderEmployeeRecurringList(tasks) {
   }
 }
 
-function buildEmployeeRecurringCard(task) {
+function buildEmployeeRecurringCard(task, refreshFn = refreshMainRecurringView) {
   const card = document.createElement('div');
   card.className = 'task-card';
   const inst = task.instance;
@@ -3152,7 +3293,7 @@ function buildEmployeeRecurringCard(task) {
 
   const doneBtn = card.querySelector('.done-btn');
   if (doneBtn) {
-    doneBtn.addEventListener('click', () => openRecurringDoneFlow(task, inst, checkpoints));
+    doneBtn.addEventListener('click', () => openRecurringDoneFlow(task, inst, checkpoints, refreshFn));
   }
 
   return card;
