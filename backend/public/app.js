@@ -2929,11 +2929,12 @@ async function loadEmployeeRecurringTasks() {
 function renderEmployeeRecurringTable(allTasks) {
   const tbody = document.getElementById('employeeRecurringTableBody');
   if (!tbody) return;
-  // Only tasks actually due today show up here at all — not-today tasks
-  // (weekly on a non-matching day, etc.) are left out entirely instead of
-  // showing a "Not today" row. A task completed today also drops off
-  // immediately and comes back automatically on its next due date.
-  const tasks = allTasks.filter(t => t.fires_today && t.today_instance?.status !== 'Completed');
+  // Backend already sends exactly the rows that belong here: one per
+  // pending due date (including any missed/backdated days, each keeping
+  // its own row), plus today's if it just got marked done. Nothing to
+  // filter here — a missed day like the 6th shows alongside the 7th
+  // instead of disappearing once the 7th's instance is created.
+  const tasks = allTasks;
   if (!tasks.length) {
     tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No recurring tasks assigned to you</td></tr>`;
     return;
@@ -2941,20 +2942,20 @@ function renderEmployeeRecurringTable(allTasks) {
   tbody.innerHTML = '';
   tasks.forEach((task) => {
     const tr = document.createElement('tr');
-    const inst = task.today_instance;
+    const inst = task.instance;
     const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
     const completedIds = inst
       ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
       : [];
     const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
-    const isLocked = !inst || inst.status === 'Completed';
-    const canAct = task.fires_today && !isLocked; // can this task still be acted on today?
-    const statusText = !task.fires_today ? 'Not today'
-      : inst?.status === 'Completed' ? 'Completed'
-      : checkpoints.length === 0 ? 'Pending'
-      : `Pending (${completedIds.length}/${checkpoints.length} done)`;
-    const pillClass = allDone ? 'pill-Completed'
-      : !task.fires_today ? 'pill-Rejected'
+    const isCompleted = inst?.status === 'Completed';
+    const isOverdue = !task.is_today && !isCompleted;
+    const canAct = !isCompleted;
+    const statusText = isCompleted ? 'Completed'
+      : checkpoints.length === 0 ? (isOverdue ? 'Pending (overdue)' : 'Pending')
+      : `Pending (${completedIds.length}/${checkpoints.length} done)${isOverdue ? ' — overdue' : ''}`;
+    const pillClass = isCompleted ? 'pill-Completed'
+      : isOverdue ? 'pill-Rejected'
       : 'pill-InProgress';
 
     const tdTask = document.createElement('td');
@@ -2967,12 +2968,11 @@ function renderEmployeeRecurringTable(allTasks) {
     const tdFreq = document.createElement('td');
     tdFreq.textContent = freqLabel(task);
 
-    // Row only ever shows a task that's due today, so the planned date for
-    // this instance is simply today — lets the employee see at a glance
-    // which date this pending row is for.
+    // Each row is its own due date now — the 6th's missed instance shows
+    // "6 Jul" here while the 7th's shows "7 Jul", side by side as separate rows.
     const tdDate = document.createElement('td');
     tdDate.style.whiteSpace = 'nowrap';
-    tdDate.textContent = fmtDateOnly(new Date().toISOString());
+    tdDate.textContent = fmtDateOnly(task.due_date);
 
     const tdStatus = document.createElement('td');
     tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
@@ -3085,56 +3085,52 @@ function renderEmployeeRecurringList(tasks) {
   }
   wrap.innerHTML = '';
 
-  // Today's tasks, minus anything already completed today — a completed
-  // task drops out of the list immediately (no "Completed today" section)
-  // so the employee only ever sees what's left to do. It'll reappear here
-  // automatically on its next due date once the backend creates a fresh
-  // instance for that date.
-  const dueToday = tasks.filter(t => t.fires_today);
-  const activeToday = dueToday.filter(t => t.today_instance?.status !== 'Completed');
-  const notToday = tasks.filter(t => !t.fires_today);
+  // Backend already sends one row per pending due date, oldest first — a
+  // missed day (e.g. the 6th) keeps its own row instead of vanishing once
+  // the 7th's instance exists. Split just for a friendlier "Today" vs
+  // "Overdue" heading; nothing gets filtered out here.
+  const todays = tasks.filter(t => t.is_today);
+  const overdue = tasks.filter(t => !t.is_today);
 
-  if (activeToday.length) {
+  if (overdue.length) {
     const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
+    hdr.className = 'nav-section-label'; hdr.textContent = 'Overdue';
     wrap.appendChild(hdr);
-    activeToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+    overdue.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
+  }
+
+  const hdr = document.createElement('div');
+  hdr.className = 'nav-section-label'; hdr.style.marginTop = overdue.length ? '24px' : '0';
+  hdr.textContent = "Today's tasks";
+  wrap.appendChild(hdr);
+  if (todays.length) {
+    todays.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
   } else {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.textContent = "Today's tasks";
-    wrap.appendChild(hdr);
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.textContent = 'Nothing due today 🎉';
     wrap.appendChild(empty);
-  }
-  if (notToday.length) {
-    const hdr = document.createElement('div');
-    hdr.className = 'nav-section-label'; hdr.style.marginTop = '24px';
-    hdr.textContent = 'Other recurring tasks (not due today)';
-    wrap.appendChild(hdr);
-    notToday.forEach(t => wrap.appendChild(buildEmployeeRecurringCard(t)));
   }
 }
 
 function buildEmployeeRecurringCard(task) {
   const card = document.createElement('div');
   card.className = 'task-card';
-  const inst = task.today_instance;
+  const inst = task.instance;
   const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
   const completedIds = inst
     ? (inst.recurring_task_checkpoint_completions || []).map(c => c.checkpoint_id)
     : [];
   const allDone = checkpoints.length > 0 && completedIds.length === checkpoints.length;
-  const isLocked = !inst || inst.status === 'Completed';
-  const canAct = task.fires_today && !isLocked;
-  const status = !task.fires_today ? 'Not today'
-    : inst?.status === 'Completed' ? 'Completed'
-    : checkpoints.length === 0 ? 'Pending'
-    : `${completedIds.length}/${checkpoints.length} done`;
+  const isCompleted = inst?.status === 'Completed';
+  const isOverdue = !task.is_today && !isCompleted;
+  const canAct = !isCompleted;
+  const status = isCompleted ? 'Completed'
+    : checkpoints.length === 0 ? (isOverdue ? 'Pending (overdue)' : 'Pending')
+    : `Pending (${completedIds.length}/${checkpoints.length} done)${isOverdue ? ' — overdue' : ''}`;
 
-  const pillClass = allDone ? 'pill-Completed'
-    : !task.fires_today ? 'pill-Rejected'
+  const pillClass = isCompleted ? 'pill-Completed'
+    : isOverdue ? 'pill-Rejected'
     : 'pill-In-Progress';
 
   card.innerHTML = `
@@ -3146,7 +3142,7 @@ function buildEmployeeRecurringCard(task) {
       <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
       ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
       ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
-      <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
+      <div class="task-detail-line"><span class="task-detail-label">Planned date:</span> ${escapeHtml(fmtDateOnly(task.due_date))}</div>
     </div>
     ${canAct ? `
     <div class="task-card-actions">
