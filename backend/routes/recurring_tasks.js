@@ -18,56 +18,89 @@ const RT_SELECT = `
   checkpoints:recurring_task_checkpoints ( id, label, sort_order )
 `;
 
-// Given a recurring task + today's date, figure out whether an instance
-// should exist today and return/create it with checkpoint completion state.
-async function getOrCreateTodayInstance(recurringTaskId, dueDate) {
-  const dueDateStr = dueDate.toISOString().slice(0, 10);
+// How far back we're willing to dig up missed days. An employee who hasn't
+// opened the app in ages shouldn't suddenly get a 400-row backlog — 30 days
+// is plenty to catch a genuinely missed day or two without going overboard.
+const BACKFILL_DAYS = 30;
 
-  // upsert-style: try to get existing first
-  let { data: instance, error } = await supabase
-    .from('recurring_task_instances')
-    .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
-    .eq('recurring_task_id', recurringTaskId)
-    .eq('due_date', dueDateStr)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  if (!instance) {
-    const { data: newInst, error: createErr } = await supabase
-      .from('recurring_task_instances')
-      .insert({ recurring_task_id: recurringTaskId, due_date: dueDateStr, status: 'Pending' })
-      .select('id, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
-      .single();
-    if (createErr) throw createErr;
-    instance = newInst;
-  }
-
-  return instance;
-}
-
-// Is today a valid fire date for this task?
-function shouldFireToday(task, today) {
+// Date-agnostic version of "should this task fire on this particular day" —
+// lets us check any day in the backfill window, not just today.
+function shouldFireOn(task, date) {
   const start = new Date(task.start_date);
   const end = task.end_date ? new Date(task.end_date) : null;
-  const todayDate = new Date(today.toISOString().slice(0, 10));
+  const d = new Date(date.toISOString().slice(0, 10));
 
-  if (todayDate < start) return false;
-  if (end && todayDate > end) return false;
+  if (d < start) return false;
+  if (end && d > end) return false;
 
   const freq = task.frequency;
   if (freq === 'Daily') return true;
   if (freq === 'Weekly') {
     const days = (task.frequency_days || '').split(',').map(Number);
-    return days.includes(today.getDay());
+    return days.includes(date.getDay());
   }
-  if (freq === 'Monthly') {
-    return today.getDate() === start.getDate();
-  }
-  if (freq === 'Yearly') {
-    return today.getDate() === start.getDate() && today.getMonth() === start.getMonth();
-  }
+  if (freq === 'Monthly') return date.getDate() === start.getDate();
+  if (freq === 'Yearly') return date.getDate() === start.getDate() && date.getMonth() === start.getMonth();
   return false;
+}
+
+// Is today a valid fire date for this task? (kept as a thin wrapper — some
+// call sites just want today's answer)
+function shouldFireToday(task, today) {
+  return shouldFireOn(task, today);
+}
+
+// Every date (oldest → newest), within the backfill window, up to and
+// including today, on which this task was supposed to fire. This is what
+// lets a missed day (e.g. task not done on the 6th) keep showing up as its
+// own pending row on the 7th instead of silently disappearing — each due
+// date gets its own instance/row.
+function getFireDates(task, today) {
+  const dates = [];
+  const start = new Date(task.start_date);
+  const todayOnly = new Date(today.toISOString().slice(0, 10));
+
+  let cursor = new Date(todayOnly);
+  cursor.setDate(cursor.getDate() - BACKFILL_DAYS);
+  if (cursor < start) cursor = new Date(start);
+
+  while (cursor <= todayOnly) {
+    if (shouldFireOn(task, cursor)) dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+// Fetches existing instances for a batch of due dates in one query, then
+// creates whichever ones are still missing (e.g. a day the employee never
+// opened the app on so no instance was ever created for it). Returns them
+// all, in the same oldest→newest order as dueDates.
+async function getOrCreateInstances(recurringTaskId, dueDates) {
+  if (!dueDates.length) return [];
+  const dueDateStrs = dueDates.map(d => d.toISOString().slice(0, 10));
+
+  const { data: existing, error } = await supabase
+    .from('recurring_task_instances')
+    .select('id, due_date, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )')
+    .eq('recurring_task_id', recurringTaskId)
+    .in('due_date', dueDateStrs);
+  if (error) throw error;
+
+  const byDate = {};
+  (existing || []).forEach(i => { byDate[i.due_date] = i; });
+
+  const missing = dueDateStrs.filter(d => !byDate[d]);
+  if (missing.length) {
+    const rows = missing.map(due_date => ({ recurring_task_id: recurringTaskId, due_date, status: 'Pending' }));
+    const { data: created, error: createErr } = await supabase
+      .from('recurring_task_instances')
+      .insert(rows)
+      .select('id, due_date, status, completed_at, recurring_task_checkpoint_completions ( checkpoint_id )');
+    if (createErr) throw createErr;
+    (created || []).forEach(i => { byDate[i.due_date] = i; });
+  }
+
+  return dueDateStrs.map(d => byDate[d]).filter(Boolean);
 }
 
 // ─── Admin: get saved checkpoint template for a task type ─────────────────
@@ -206,10 +239,13 @@ router.get('/all', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── Employee: my recurring tasks (with today's instance + checkpoint state) ─
+// ─── Employee: my recurring tasks (one row per pending due date — a missed
+// day like the 6th keeps its own row instead of vanishing when the 7th's
+// instance is created) ───────────────────────────────────────────────────
 router.get('/my', async (req, res) => {
   try {
     const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
 
     const { data: tasks, error } = await supabase
       .from('recurring_tasks')
@@ -220,15 +256,29 @@ router.get('/my', async (req, res) => {
 
     const result = [];
     for (const task of tasks) {
-      const fires = shouldFireToday(task, today);
-      let todayInstance = null;
+      const fireDates = getFireDates(task, today);
+      const instances = await getOrCreateInstances(task.id, fireDates);
 
-      if (fires) {
-        todayInstance = await getOrCreateTodayInstance(task.id, today);
+      for (const inst of instances) {
+        // A day that's already been completed just disappears — except
+        // today's, which stays visible (as "Completed") until the page
+        // is next refreshed, so the checkmark doesn't vanish instantly.
+        if (inst.status === 'Completed' && inst.due_date !== todayStr) continue;
+
+        result.push({
+          ...task,
+          due_date: inst.due_date,
+          is_today: inst.due_date === todayStr,
+          instance: inst,
+          // kept for backward compatibility with older frontend code
+          fires_today: inst.due_date === todayStr,
+          today_instance: inst
+        });
       }
-
-      result.push({ ...task, fires_today: fires, today_instance: todayInstance });
     }
+
+    // Oldest pending day first, so the backlog clears in order.
+    result.sort((a, b) => a.due_date.localeCompare(b.due_date));
 
     res.json(result);
   } catch (err) {
