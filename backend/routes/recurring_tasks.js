@@ -224,15 +224,50 @@ router.post('/', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── Admin: list all recurring tasks ───────────────────────────────────────
+// ─── Admin: list all recurring tasks (with overdue status per task) ───────
 router.get('/all', requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const today = new Date();
+    const todayOnly = new Date(today.toISOString().slice(0, 10));
+
+    const { data: tasks, error } = await supabase
       .from('recurring_tasks')
       .select(RT_SELECT)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    res.json(data);
+
+    // For each task, figure out if the assigned employee has any pending
+    // instance from before today (i.e. a missed day still not done) and,
+    // if so, how many days overdue the oldest one is — so the admin can
+    // see at a glance which recurring tasks have fallen behind.
+    const result = [];
+    for (const task of tasks) {
+      let overdue_days = 0;
+      let oldest_overdue_date = null;
+
+      if (task.is_active) {
+        const fireDates = getFireDates(task, today);
+        const instances = await getOrCreateInstances(task.id, fireDates);
+        const overdueInstances = instances.filter(
+          i => i.status !== 'Completed' && i.due_date < todayOnly.toISOString().slice(0, 10)
+        );
+        if (overdueInstances.length) {
+          // instances come back oldest → newest already
+          oldest_overdue_date = overdueInstances[0].due_date;
+          const diffMs = todayOnly - new Date(oldest_overdue_date);
+          overdue_days = Math.round(diffMs / 86400000);
+        }
+      }
+
+      result.push({
+        ...task,
+        is_overdue: overdue_days > 0,
+        overdue_days,
+        oldest_overdue_date
+      });
+    }
+
+    res.json(result);
   } catch (err) {
     console.error('List recurring tasks error:', err.message);
     res.status(500).json({ error: 'Could not load recurring tasks' });
