@@ -252,6 +252,26 @@
             </div>
           </div>
           <div id="overdueTasksCards" class="task-list view-mobile-only"></div>
+
+          <!-- Recurring tasks that have fallen behind (a due date passed
+               without being marked done) — shown separately since they're
+               a different kind of record (instances, not delegated tasks). -->
+          <div id="overdueRecurringSection" style="margin-top:28px" hidden>
+            <h3 class="nav-section-label" style="font-size:14px;margin-bottom:10px">🔁 Overdue recurring tasks</h3>
+            <div class="table-card view-desktop-only">
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th><th>Task</th><th>Frequency</th><th>Overdue since</th><th>Days overdue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overdueRecurringTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="overdueRecurringCards" class="task-list view-mobile-only"></div>
+          </div>
         </section>
 
 
@@ -299,18 +319,24 @@
                resolve from their real pages; an item simply drops off this
                list on its own once it's no longer pending. -->
           <div id="otherPendingTabPanel" hidden>
-            <div class="other-pending-block">
-              <h3 class="nav-section-label" style="font-size:14px">🌴 Pending Leave Requests</h3>
-              <div id="otherPendingLeavesList" class="task-list"></div>
+            <div class="my-tasks-tabs" id="otherPendingSubTabBar" style="margin-bottom:16px">
+              <button type="button" class="my-tasks-tab-btn active" data-subtab="leave">
+                🌴 Leave
+                <span class="my-tasks-tab-badge" id="otherPendingLeaveBadge" hidden>0</span>
+              </button>
+              <button type="button" class="my-tasks-tab-btn" data-subtab="verification">
+                🔎 Verification
+                <span class="my-tasks-tab-badge" id="otherPendingVerificationBadge" hidden>0</span>
+              </button>
+              <button type="button" class="my-tasks-tab-btn" data-subtab="tickets">
+                🟠 Tickets
+                <span class="my-tasks-tab-badge" id="otherPendingTicketsBadge" hidden>0</span>
+              </button>
             </div>
-            <div class="other-pending-block" style="margin-top:24px">
-              <h3 class="nav-section-label" style="font-size:14px">🔎 Pending Verifications</h3>
-              <div id="otherPendingVerificationsList" class="task-list"></div>
-            </div>
-            <div class="other-pending-block" style="margin-top:24px">
-              <h3 class="nav-section-label" style="font-size:14px">🟠 Open Tickets</h3>
-              <div id="otherPendingTicketsList" class="task-list"></div>
-            </div>
+
+            <div id="otherPendingLeavesList" class="task-list"></div>
+            <div id="otherPendingVerificationsList" class="task-list" hidden></div>
+            <div id="otherPendingTicketsList" class="task-list" hidden></div>
           </div>
         </section>
 
