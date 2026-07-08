@@ -487,7 +487,7 @@ async function refreshNavBadges() {
       const openTickets = tickets.filter(t => t.status === 'Open').length;
       setNavBadge('tickets-open', openTickets);
     } else {
-      // Admin: all tasks pending, overdue, verifications, open tickets
+      // Admin: all tasks pending, overdue (delegated + recurring), verifications, open tickets
       const allTasks = await api('/tasks/all');
       const now = new Date();
       const pendingCount = allTasks.filter(t => t.status === 'Pending' || t.verification_status === 'Pending Verification').length;
@@ -497,8 +497,12 @@ async function refreshNavBadges() {
         if (t.verification_status === 'Verified') return false;
         return new Date(t.target_date) < now;
       }).length;
+
+      const recurringAll = await api('/recurring-tasks/all').catch(() => []);
+      const overdueRecurringCount = recurringAll.filter(t => t.is_overdue).length;
+
       setNavBadge('all', pendingCount);
-      setNavBadge('overdue', overdueCount);
+      setNavBadge('overdue', overdueCount + overdueRecurringCount);
 
       // Open tickets
       const tickets = await api('/tickets');
@@ -780,7 +784,55 @@ async function loadOverdueTasks() {
     overdueTasksCache = overdue;
     renderOverdueTasksTable(els.overdueTasksList, overdue);
     renderTaskList(els.overdueTasksCards, overdue, { showAssignee: true, allowActions: true });
+
+    // Recurring tasks that have missed a due date also count as "overdue"
+    // for the admin — shown in their own mini-table below since they're a
+    // different kind of record (instances, not delegated tasks).
+    const recurringAll = await api('/recurring-tasks/all').catch(() => []);
+    const overdueRecurring = recurringAll
+      .filter(t => t.is_overdue)
+      .sort((a, b) => b.overdue_days - a.overdue_days);
+    renderOverdueRecurringSection(overdueRecurring);
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderOverdueRecurringSection(tasks) {
+  const section = document.getElementById('overdueRecurringSection');
+  const tbody = document.getElementById('overdueRecurringTableBody');
+  const cards = document.getElementById('overdueRecurringCards');
+  if (!section || !tbody || !cards) return;
+
+  section.hidden = tasks.length === 0;
+  if (tasks.length === 0) return;
+
+  tbody.innerHTML = '';
+  cards.innerHTML = '';
+  tasks.forEach((task) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong></td>
+      <td>${escapeHtml(task.description ?? '')}</td>
+      <td>${escapeHtml(freqLabel(task))}</td>
+      <td>${escapeHtml(fmtDateOnly(task.oldest_overdue_date))}</td>
+      <td><span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''}</span></td>
+    `;
+    tbody.appendChild(tr);
+
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.innerHTML = `
+      <div class="task-card-header">
+        <span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''} overdue</span>
+        <span style="font-size:12px;color:#888">${escapeHtml(freqLabel(task))}</span>
+      </div>
+      <div class="task-card-body">
+        <div class="task-detail-line"><span class="task-detail-label">Employee:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>
+        <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+        <div class="task-detail-line"><span class="task-detail-label">Overdue since:</span> ${escapeHtml(fmtDateOnly(task.oldest_overdue_date))}</div>
+      </div>
+    `;
+    cards.appendChild(card);
+  });
 }
 
 // renders the admin "Overdue tasks" as a table (desktop) — adds a Verifier
@@ -988,51 +1040,55 @@ async function loadMyTasks() {
 
   const isAdmin = state.user.role === 'admin';
   const tabBar = document.getElementById('myTasksTabBar');
-  const ownRecurringSection = document.getElementById('myOwnRecurringSection');
   if (tabBar) tabBar.hidden = !isAdmin;
-  if (ownRecurringSection) ownRecurringSection.hidden = !isAdmin;
 
   try {
     const allTasks = await api('/tasks/my');
     const visibleTasks = allTasks.filter(
       (task) => task.status !== 'Completed' && task.status !== 'Rejected'
     );
-    renderMyTasksTable(els.myTasksTableBody, visibleTasks);
-    renderTaskList(els.myTasksList, visibleTasks, { showAssignee: false, allowActions: true });
 
     // Admin can be personally assigned recurring tasks too — those never
     // showed up anywhere before (the Recurring Tasks nav item is the admin's
-    // management/CRUD view, not their own to-do list). Show them here.
-    if (isAdmin) loadMyOwnRecurringTasks();
-  } catch (err) { showToast(err.message, 'error'); }
-}
+    // management/CRUD view, not their own to-do list). They're merged into
+    // this same table/list — one unified "My Task" view, not a separate
+    // section — with a 🔁 marker so they're still easy to tell apart.
+    const recurringTasks = isAdmin ? await api('/recurring-tasks/my').catch(() => []) : [];
 
-// Admin's own recurring tasks — reuses the same renderers as the employee
-// recurring view, just pointed at this tab's own containers/refresh.
-async function loadMyOwnRecurringTasks() {
-  const tbody = document.getElementById('myOwnRecurringTableBody');
-  const wrap = document.getElementById('myOwnRecurringList');
-  if (!tbody || !wrap) return;
-  try {
-    const tasks = await api('/recurring-tasks/my');
-    renderEmployeeRecurringTable(tasks, tbody, refreshMyOwnRecurringView);
-    renderEmployeeRecurringList(tasks, wrap, refreshMyOwnRecurringView);
-  } catch (err) { /* non-critical — don't block the rest of My Tasks */ }
-}
-async function refreshMyOwnRecurringView() {
-  await loadMyOwnRecurringTasks();
+    renderMyTasksTable(els.myTasksTableBody, visibleTasks, recurringTasks);
+
+    els.myTasksList.innerHTML = '';
+    els.myTasksList.classList.add('task-list');
+    visibleTasks.forEach(t => els.myTasksList.appendChild(renderTaskCard(t, { showAssignee: false, allowActions: true })));
+    recurringTasks.forEach(t => els.myTasksList.appendChild(buildEmployeeRecurringCard(t, loadMyTasks)));
+    if (!visibleTasks.length && !recurringTasks.length) {
+      els.myTasksList.innerHTML = `<div class="empty-state"><span class="emoji">📭</span>No tasks found</div>`;
+    }
+  } catch (err) { showToast(err.message, 'error'); }
 }
 
 // ─── "My Tasks" tabs (admin only): My Task ↔ Other Pending Work ───────────
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.my-tasks-tab-btn').forEach((btn) => {
+  document.querySelectorAll('#myTasksTabBar .my-tasks-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.my-tasks-tab-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('#myTasksTabBar .my-tasks-tab-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.mytab;
       document.getElementById('myTaskTabPanel').hidden = tab !== 'mytask';
       document.getElementById('otherPendingTabPanel').hidden = tab !== 'other';
       if (tab === 'other') loadOtherPendingWork();
+    });
+  });
+
+  // Other Pending Work has its own 3 sub-tabs: Leave / Verification / Tickets
+  document.querySelectorAll('#otherPendingSubTabBar .my-tasks-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#otherPendingSubTabBar .my-tasks-tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.subtab;
+      document.getElementById('otherPendingLeavesList').hidden = sub !== 'leave';
+      document.getElementById('otherPendingVerificationsList').hidden = sub !== 'verification';
+      document.getElementById('otherPendingTicketsList').hidden = sub !== 'tickets';
     });
   });
 });
@@ -1064,13 +1120,22 @@ async function loadOtherPendingWork() {
     renderOtherPendingVerifications(verifications, verifWrap);
     renderOtherPendingTickets(openTickets, ticketsWrap);
 
+    setBadge('otherPendingLeaveBadge', leaves.length);
+    setBadge('otherPendingVerificationBadge', verifications.length);
+    setBadge('otherPendingTicketsBadge', openTickets.length);
+
     const total = leaves.length + verifications.length + openTickets.length;
-    const badge = document.getElementById('otherPendingBadge');
-    if (badge) {
-      badge.hidden = total <= 0;
-      badge.textContent = total > 99 ? '99+' : total;
-    }
+    setBadge('otherPendingBadge', total);
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Small helper for the badge spans on tab buttons (not the sidebar nav
+// badges — those go through setNavBadge).
+function setBadge(elementId, count) {
+  const badge = document.getElementById(elementId);
+  if (!badge) return;
+  badge.hidden = count <= 0;
+  badge.textContent = count > 99 ? '99+' : count;
 }
 
 function renderOtherPendingLeaves(leaves, wrap) {
@@ -1128,8 +1193,8 @@ function renderOtherPendingTickets(tickets, wrap) {
 
 // renders "My tasks" as a table (desktop). Same columns as All Tasks, minus
 // "Assigned to" (it's always you), since this is the employee's own task list.
-function renderMyTasksTable(tbody, tasks) {
-  if (!tasks || tasks.length === 0) {
+function renderMyTasksTable(tbody, tasks, recurringTasks = []) {
+  if ((!tasks || tasks.length === 0) && recurringTasks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><span class="emoji">📭</span>No tasks found</td></tr>`;
     return;
   }
@@ -1197,6 +1262,67 @@ function renderMyTasksTable(tbody, tasks) {
     tdActions.className = 'row-actions';
     buildPrimaryStatusButtons(task, { showAssignee: false, allowActions: true }).forEach((btn) => tdActions.appendChild(btn));
     tdActions.appendChild(buildCardMenuElement(task, { showAssignee: false }));
+
+    tr.append(tdSr, tdDetails, tdDate, tdVoice, tdAttach, tdPriority, tdStatus, tdActions);
+    tbody.appendChild(tr);
+  });
+
+  // Recurring tasks assigned to the admin personally — merged into this
+  // same table (continuing the Sr No count) rather than a separate section,
+  // with a 🔁 marker on the task details so they're still easy to spot.
+  recurringTasks.forEach((task, i) => {
+    const tr = document.createElement('tr');
+    const inst = task.instance;
+    const checkpoints = (task.checkpoints || []).sort((a, b) => a.sort_order - b.sort_order);
+    const completedIds = inst
+      ? (inst.recurring_task_checkpoint_completions || []).map((c) => c.checkpoint_id)
+      : [];
+    const isCompleted = inst?.status === 'Completed';
+    const isOverdue = !task.is_today && !isCompleted;
+    const statusText = isCompleted ? 'Completed'
+      : checkpoints.length === 0 ? (isOverdue ? 'Pending (overdue)' : 'Pending')
+      : `Pending (${completedIds.length}/${checkpoints.length} done)${isOverdue ? ' — overdue' : ''}`;
+    const pillClass = isCompleted ? 'pill-Completed' : isOverdue ? 'pill-Rejected' : 'pill-InProgress';
+
+    const tdSr = document.createElement('td');
+    tdSr.innerHTML = `<span class="sr-number">${tasks.length + i + 1}</span>`;
+
+    const tdDetails = document.createElement('td');
+    tdDetails.className = 'task-name-cell';
+    tdDetails.innerHTML = `
+      <div class="task-detail-line"><span class="pill pill-InProgress" style="font-size:10px">🔁 Recurring</span></div>
+      <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+      ${task.project ? `<div class="task-detail-line"><span class="task-detail-label">Project:</span> ${escapeHtml(task.project.name)}</div>` : ''}
+      ${task.task_type ? `<div class="task-detail-line"><span class="task-detail-label">Type:</span> ${escapeHtml(task.task_type.name)}</div>` : ''}
+    `;
+
+    const tdDate = document.createElement('td');
+    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.textContent = fmtDateOnly(task.due_date);
+
+    const tdVoice = document.createElement('td');
+    tdVoice.style.textAlign = 'center';
+    tdVoice.innerHTML = `<span class="media-none">—</span>`;
+
+    const tdAttach = document.createElement('td');
+    tdAttach.style.textAlign = 'center';
+    tdAttach.innerHTML = `<span class="media-none">—</span>`;
+
+    const tdPriority = document.createElement('td');
+    tdPriority.innerHTML = `<span class="media-none">—</span>`;
+
+    const tdStatus = document.createElement('td');
+    tdStatus.innerHTML = `<span class="pill ${pillClass}">${escapeHtml(statusText)}</span>`;
+
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    if (!isCompleted) {
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'action-btn action-accept';
+      doneBtn.textContent = '✅ Done';
+      doneBtn.addEventListener('click', () => openRecurringDoneFlow(task, inst, checkpoints, loadMyTasks));
+      tdActions.appendChild(doneBtn);
+    }
 
     tr.append(tdSr, tdDetails, tdDate, tdVoice, tdAttach, tdPriority, tdStatus, tdActions);
     tbody.appendChild(tr);
@@ -3062,8 +3188,8 @@ async function loadEmployeeRecurringTasks() {
 }
 
 // Default refresh used after marking a recurring task done from the main
-// "My recurring tasks" page (as opposed to the admin's own-tasks tab inside
-// "My Tasks", which uses refreshMyOwnRecurringView instead — see below).
+// "My recurring tasks" page. (The admin's own recurring tasks inside "My
+// Tasks" are merged into that table directly and refresh via loadMyTasks.)
 async function refreshMainRecurringView() {
   const refreshed = await api('/recurring-tasks/my');
   renderEmployeeRecurringList(refreshed);
