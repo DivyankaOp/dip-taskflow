@@ -383,7 +383,6 @@ function buildNav() {
     if (isAdmin) {
       els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
       els.navList.appendChild(makeNavButton('permissions', '🔐 Permissions'));
-      els.navList.appendChild(makeNavButton('reports', '📊 Reports'));
       els.navList.appendChild(makeNavButton('daily-report', '📋 Daily Report'));
     }
   }
@@ -538,7 +537,6 @@ function switchView(viewKey) {
   if (viewKey === 'corrections')   loadCorrections();
   if (viewKey === 'updations')     loadUpdations();
   if (viewKey === 'recurring')     loadRecurringView();
-  if (viewKey === 'reports')       initReportsView();
   if (viewKey === 'applyleave')      loadMyLeaves();
   if (viewKey === 'leaveapprovals')  loadLeaveApprovals();
   if (viewKey === 'drawings-add')  renderDrawingAddView();
@@ -784,26 +782,43 @@ async function loadOverdueTasks() {
     overdueTasksCache = overdue;
     renderOverdueTasksTable(els.overdueTasksList, overdue);
     renderTaskList(els.overdueTasksCards, overdue, { showAssignee: true, allowActions: true });
+    setBadge('overdueTaskBadge', overdue.length);
 
     // Recurring tasks that have missed a due date also count as "overdue"
-    // for the admin — shown in their own mini-table below since they're a
-    // different kind of record (instances, not delegated tasks).
+    // for the admin — kept in their own "Recurring Task" tab since they're
+    // a different kind of record (instances, not delegated tasks).
     const recurringAll = await api('/recurring-tasks/all').catch(() => []);
     const overdueRecurring = recurringAll
       .filter(t => t.is_overdue)
       .sort((a, b) => b.overdue_days - a.overdue_days);
     renderOverdueRecurringSection(overdueRecurring);
+    setBadge('overdueRecurringBadge', overdueRecurring.length);
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+// ─── Overdue tab switching: Task ↔ Recurring Task ──────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#overdueTabBar .my-tasks-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#overdueTabBar .my-tasks-tab-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.overduetab;
+      document.getElementById('overdueTaskTabPanel').hidden = tab !== 'task';
+      document.getElementById('overdueRecurringTabPanel').hidden = tab !== 'recurring';
+    });
+  });
+});
+
 function renderOverdueRecurringSection(tasks) {
-  const section = document.getElementById('overdueRecurringSection');
   const tbody = document.getElementById('overdueRecurringTableBody');
   const cards = document.getElementById('overdueRecurringCards');
-  if (!section || !tbody || !cards) return;
+  if (!tbody || !cards) return;
 
-  section.hidden = tasks.length === 0;
-  if (tasks.length === 0) return;
+  if (tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><span class="emoji">🎉</span>No overdue recurring tasks</td></tr>`;
+    cards.innerHTML = `<div class="empty-state"><span class="emoji">🎉</span>No overdue recurring tasks</div>`;
+    return;
+  }
 
   tbody.innerHTML = '';
   cards.innerHTML = '';
@@ -3445,284 +3460,6 @@ function fillRecurringDropdowns() {
   });
   fillSelect(recEls.project(), state.master.projects, { placeholder: 'Select Project' });
 }
-// ─── Reports (admin only) ────────────────────────────────────────────────────
-
-let reportState = { range: 'day' };
-let _reportInitDone = false;
-
-function initReportsView() {
-  if (!_reportInitDone) {
-    _reportInitDone = true;
-    document.querySelectorAll('.report-range-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.report-range-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        reportState.range = btn.dataset.range;
-        const cd = document.getElementById('reportCustomDates');
-        cd.style.display = reportState.range === 'custom' ? 'flex' : 'none';
-      });
-    });
-    document.getElementById('loadReportBtn').onclick = loadReport;
-  }
-  loadReport();
-}
-
-async function loadReport() {
-  const area = document.getElementById('reportPrintArea');
-  if (!area) return;
-  area.innerHTML = '<p style="padding:30px;color:#94a3b8">Loading report…</p>';
-
-  try {
-    let url = `/tasks/report?range=${reportState.range}`;
-    if (reportState.range === 'custom') {
-      const from = document.getElementById('reportFrom').value;
-      const to   = document.getElementById('reportTo').value;
-      if (!from || !to) { showToast('Select both from and to dates', 'error'); area.innerHTML = ''; return; }
-      url += `&from=${from}&to=${to}`;
-    }
-    const data = await api(url);
-    renderReport(data);
-    const exportBtn = document.getElementById('exportPdfBtn');
-    if (exportBtn) exportBtn.style.display = 'inline-block';
-  } catch (err) {
-    area.innerHTML = `<p style="color:#ef4444;padding:20px">${err.message}</p>`;
-  }
-}
-
-function _hrsBetween(a, b) {
-  if (!a || !b) return null;
-  return Math.round(((new Date(b) - new Date(a)) / 3600000) * 10) / 10;
-}
-function _fmtD(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-}
-function _hrsCell(h) {
-  if (h === null || h === undefined) return '<span style="color:#d1d5db">—</span>';
-  const color = h > 8 ? '#ef4444' : h > 4 ? '#f59e0b' : '#10b981';
-  return `<span style="color:${color};font-weight:700">${h}h</span>`;
-}
-
-function renderReport(data) {
-  const area = document.getElementById('reportPrintArea');
-  const { report } = data;
-
-  let totalTasks = 0, totalVerified = 0, totalPendingVerify = 0, totalCorrections = 0;
-  const allTasks = [];
-
-  report.forEach(emp => {
-    emp.projects.forEach(proj => {
-      proj.tasks.forEach(t => {
-        totalTasks++;
-        allTasks.push(t);
-        if (t.verification_status === 'Verified') totalVerified++;
-        if (t.verification_status === 'Pending Verification') totalPendingVerify++;
-        if (t.verification_status === 'Verification Rejected') totalCorrections++;
-      });
-    });
-  });
-
-  // ── Section 1: Employee cards ──
-  const sec1Cards = report.map(emp => {
-    const empTasks = emp.projects.flatMap(p => p.tasks);
-    const statusCount = {};
-    empTasks.forEach(t => { statusCount[t.status] = (statusCount[t.status]||0)+1; });
-    const verCount = {};
-    empTasks.forEach(t => { if(t.verification_status) verCount[t.verification_status]=(verCount[t.verification_status]||0)+1; });
-
-    const statusColors = { 'Completed':'#d1fae5,#065f46','In Progress':'#fef3c7,#92400e','Pending':'#f1f5f9,#475569','Rejected':'#fee2e2,#991b1b' };
-    const verColors    = { 'Verified':'#d1fae5,#065f46','Pending Verification':'#fef3c7,#92400e','Verification Rejected':'#fee2e2,#991b1b' };
-
-    const sPills = Object.entries(statusCount).map(([s,c]) => {
-      const [bg,fg]=(statusColors[s]||'#f1f5f9,#475569').split(',');
-      return `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">${s}: ${c}</span>`;
-    }).join(' ');
-
-    const vPills = Object.entries(verCount).map(([s,c]) => {
-      const [bg,fg]=(verColors[s]||'#f1f5f9,#475569').split(',');
-      return `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">${s}: ${c}</span>`;
-    }).join(' ');
-
-    const projRows = emp.projects.map(p =>
-      `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f1f5f9;font-size:12px">
-        <span>${p.name}</span><span style="font-weight:700">${p.tasks.length}</span>
-      </div>`
-    ).join('');
-
-    return `<div class="rpt-emp-card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <span style="font-weight:800;font-size:13px">${emp.name}</span>
-        <span style="font-size:11px;color:#9ca3af">${empTasks.length} tasks</span>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px">${sPills}</div>
-      ${vPills?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${vPills}</div>`:''}
-      <div style="margin-top:4px">${projRows}</div>
-    </div>`;
-  }).join('');
-
-  // ── Section 1b: Time breakdown per employee ──
-  const sec1b = report.map(emp => {
-    const rows = emp.projects.flatMap(proj => proj.tasks.map(t => {
-      const acceptHrs = _hrsBetween(t.created_at, t.accepted_at);
-      const workHrs   = _hrsBetween(t.accepted_at, t.sent_for_verification_at);
-      const verHrs    = _hrsBetween(t.sent_for_verification_at, t.verified_at);
-      const totalHrs  = _hrsBetween(t.created_at, t.verified_at||t.rejected_at);
-      const sc = {'Completed':'#065f46','In Progress':'#92400e','Pending':'#475569','Rejected':'#991b1b'}[t.status]||'#475569';
-      const sb = {'Completed':'#d1fae5','In Progress':'#fef3c7','Pending':'#f1f5f9','Rejected':'#fee2e2'}[t.status]||'#f1f5f9';
-      return `<tr>
-        <td style="max-width:180px;white-space:normal">${t.description}</td>
-        <td>${proj.name}</td>
-        <td><span style="background:${sb};color:${sc};padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">${t.status}</span></td>
-        <td style="font-size:11px;white-space:nowrap">${_fmtD(t.created_at)}</td>
-        <td style="text-align:center">${_hrsCell(acceptHrs)}</td>
-        <td style="text-align:center">${_hrsCell(workHrs)}</td>
-        <td style="text-align:center">${_hrsCell(verHrs)}</td>
-        <td style="text-align:center">${_hrsCell(totalHrs)}</td>
-      </tr>`;
-    })).join('');
-
-    return `<div style="margin-bottom:24px">
-      <div style="font-weight:700;font-size:13px;color:#374151;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #e5e7eb">
-        ${emp.name} <span style="font-weight:400;font-size:11px;color:#9ca3af">— time breakdown</span>
-      </div>
-      <div style="overflow-x:auto">
-        <table class="rpt-table">
-          <thead><tr>
-            <th>Task</th><th>Project</th><th>Status</th><th>Created</th>
-            <th title="Created → Accepted">⏱ Accept (h)</th>
-            <th title="Accepted → Sent for verify">⏱ Work (h)</th>
-            <th title="Sent → Verified">⏱ Verify (h)</th>
-            <th title="Full cycle">⏱ Total (h)</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>`;
-  }).join('');
-
-  // ── Section 2: Project × Employee matrix ──
-  const allProjNames = [...new Set(allTasks.map(t=>t.project?.name||'No project'))].sort();
-  const matrixRows = allProjNames.map(pname => {
-    const cells = report.map(emp => {
-      const c = emp.projects.find(p=>p.name===pname)?.tasks.length||0;
-      return `<td style="text-align:center">${c||'<span style="color:#d1d5db">—</span>'}</td>`;
-    }).join('');
-    const total = report.reduce((s,emp)=>s+(emp.projects.find(p=>p.name===pname)?.tasks.length||0),0);
-    return `<tr><td style="font-weight:600">${pname}</td>${cells}<td style="text-align:center;font-weight:700">${total}</td></tr>`;
-  }).join('');
-  const empTotals = report.map(e=>`<td style="text-align:center;font-weight:700">${e.totalTasks}</td>`).join('');
-  const grand = report.reduce((s,e)=>s+e.totalTasks,0);
-
-  // ── Section 3: Verifier matrix ──
-  const verMap = {};
-  allTasks.forEach(t => {
-    if (!t.verifier) return;
-    const vid = t.verifier.id;
-    if (!verMap[vid]) verMap[vid] = { name:t.verifier.full_name, byProj:{}, total:0, statusCounts:{} };
-    verMap[vid].total++;
-    const pn = t.project?.name||'No project';
-    verMap[vid].byProj[pn] = (verMap[vid].byProj[pn]||0)+1;
-    const vs = t.verification_status||'Unknown';
-    verMap[vid].statusCounts[vs]=(verMap[vid].statusCounts[vs]||0)+1;
-  });
-  const verifiers = Object.values(verMap);
-  const verProjNames = [...new Set(allTasks.filter(t=>t.verifier).map(t=>t.project?.name||'No project'))].sort();
-
-  const verMatrixRows = verProjNames.map(pname => {
-    const cells = verifiers.map(v=>{
-      const c=v.byProj[pname]||0;
-      return `<td style="text-align:center">${c||'<span style="color:#d1d5db">—</span>'}</td>`;
-    }).join('');
-    const total = verifiers.reduce((s,v)=>s+(v.byProj[pname]||0),0);
-    return `<tr><td style="font-weight:600">${pname}</td>${cells}<td style="text-align:center;font-weight:700">${total}</td></tr>`;
-  }).join('');
-  const verTotals = verifiers.map(v=>`<td style="text-align:center;font-weight:700">${v.total}</td>`).join('');
-  const verGrand = verifiers.reduce((s,v)=>s+v.total,0);
-
-  const verColors2 = {'Verified':'#d1fae5,#065f46','Pending Verification':'#fef3c7,#92400e','Verification Rejected':'#fee2e2,#991b1b'};
-  const verSummaryCards = verifiers.map(v => {
-    const pills = Object.entries(v.statusCounts).map(([s,c])=>{
-      const [bg,fg]=(verColors2[s]||'#f1f5f9,#475569').split(',');
-      return `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">${s}: ${c}</span>`;
-    }).join(' ');
-    return `<div class="rpt-emp-card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-        <span style="font-weight:800;font-size:13px">${v.name}</span>
-        <span style="font-size:11px;color:#9ca3af">${v.total} verified</span>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px">${pills}</div>
-    </div>`;
-  }).join('');
-
-  // ── Section 4: Correction log ──
-  const corrTasks = allTasks.filter(t=>t.verification_status==='Verification Rejected');
-  const empCorrCount = {};
-  report.forEach(emp=>{empCorrCount[emp.name]=0;});
-  corrTasks.forEach(t=>{const n=t.assigned_to_user?.full_name||'?';empCorrCount[n]=(empCorrCount[n]||0)+1;});
-  const corrPills = Object.entries(empCorrCount).map(([n,c])=>
-    `<span style="background:${c>0?'#fee2e2':'#f1f5f9'};color:${c>0?'#991b1b':'#6b7280'};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${n}: ${c}</span>`
-  ).join(' ');
-  const corrRows = corrTasks.length ? corrTasks.map(t=>
-    `<div style="border-left:3px solid #f87171;padding:10px 14px;background:#fff;margin-bottom:6px;border-radius:0 6px 6px 0;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:13px"><strong>${t.assigned_to_user?.full_name||'?'}</strong> — ${t.project?.name||'No project'}</span>
-      <span style="font-size:11px;color:#ef4444;font-weight:600">${t.verification_status}</span>
-    </div>`
-  ).join('') : '<p style="color:#9ca3af;font-size:13px">No corrections in this period.</p>';
-
-  // ── Period label ──
-  const from = new Date(data.from).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-  const to   = new Date(data.to).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-
-  area.innerHTML = `<div id="reportDoc">
-    <div class="rpt-doc-header">
-      <div style="font-size:10px;letter-spacing:1.5px;color:#9ca3af;font-weight:600;text-transform:uppercase;margin-bottom:6px">Engineering Office · Task Register</div>
-      <h1 style="font-size:24px;font-weight:800;color:#111;margin:0 0 4px">Work &amp; Verification Dashboard</h1>
-      <p style="font-size:13px;color:#6b7280;margin:0">${from} – ${to} · ${totalTasks} tasks · ${report.length} employees · ${totalVerified+totalPendingVerify+totalCorrections} verification submissions</p>
-    </div>
-
-    <div class="rpt-summary-strip">
-      ${[['Total Tasks',totalTasks,'#6366f1'],['Employees',report.length,'#3b82f6'],['Verified',totalVerified,'#10b981'],['Pending Verify',totalPendingVerify,'#f59e0b'],['Corrections',totalCorrections,'#ef4444']]
-        .map(([l,v,c])=>`<div class="rpt-stat-card" style="border-top:3px solid ${c}">
-          <div style="font-size:26px;font-weight:800;color:${c};line-height:1">${v}</div>
-          <div style="font-size:10px;color:#9ca3af;letter-spacing:0.8px;text-transform:uppercase;margin-top:4px">${l}</div>
-        </div>`).join('')}
-    </div>
-
-    <div class="rpt-section-title">1 · Work By Employee <span class="rpt-section-sub">total + status + project breakdown</span></div>
-    <div class="rpt-emp-grid">${sec1Cards}</div>
-
-    <div class="rpt-section-title" style="margin-top:32px">1b · Time Breakdown <span class="rpt-section-sub">how long each stage took per task</span></div>
-    ${sec1b}
-
-    <div class="rpt-section-title">2 · Project × Employee Matrix <span class="rpt-section-sub">how much work each person did per project</span></div>
-    <div style="overflow-x:auto">
-      <table class="rpt-table rpt-matrix">
-        <thead><tr><th>Project</th>${report.map(e=>`<th style="text-align:center">${e.name}</th>`).join('')}<th style="text-align:center">Total</th></tr></thead>
-        <tbody>${matrixRows}<tr style="background:#f8fafc"><td style="font-weight:700">Employee Total</td>${empTotals}<td style="text-align:center;font-weight:800">${grand}</td></tr></tbody>
-      </table>
-    </div>
-
-    <div class="rpt-section-title">3 · Project × Verifier Matrix <span class="rpt-section-sub">who verified tasks on which project</span></div>
-    <div style="overflow-x:auto">
-      <table class="rpt-table rpt-matrix">
-        <thead><tr><th>Project</th>${verifiers.map(v=>`<th style="text-align:center">${v.name}</th>`).join('')}<th style="text-align:center">Total</th></tr></thead>
-        <tbody>${verMatrixRows}<tr style="background:#f8fafc"><td style="font-weight:700">Verifier Total</td>${verTotals}<td style="text-align:center;font-weight:800">${verGrand}</td></tr></tbody>
-      </table>
-    </div>
-
-    <div class="rpt-section-title" style="margin-top:24px">3b · Verifier Summary <span class="rpt-section-sub">total verifications + status</span></div>
-    <div class="rpt-emp-grid">${verSummaryCards||'<p style="color:#9ca3af;font-size:13px">No verifications in this period.</p>'}</div>
-
-    <div class="rpt-section-title">4 · Correction Log <span class="rpt-section-sub">who was asked for corrections</span></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${corrPills}</div>
-    ${corrRows}
-  </div>`;
-}
-
-function exportReportPdf() {
-  window.print();
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // ─── DRAWINGS MODULE ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
