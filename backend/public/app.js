@@ -686,7 +686,7 @@ function renderAllTasksTable(tbody, tasks) {
 
     // Planned date
     const tdDate = document.createElement('td');
-    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.style.wordBreak = 'break-word';
     tdDate.textContent = fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete);
 
     // Assigned to
@@ -882,7 +882,7 @@ function renderOverdueTasksTable(tbody, tasks) {
 
     // Planned date (how overdue, shown in red) + extension note if active
     const tdDate = document.createElement('td');
-    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.style.wordBreak = 'break-word';
     const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
     tdDate.innerHTML = `
       <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
@@ -1229,7 +1229,7 @@ function renderMyTasksTable(tbody, tasks, recurringTasks = []) {
 
     // Due date (calculated from created_at + hours, same as the card view)
     const tdDate = document.createElement('td');
-    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.style.wordBreak = 'break-word';
     tdDate.textContent = getDeadlineHtml(task, false);
 
     // Voice note
@@ -1312,7 +1312,7 @@ function renderMyTasksTable(tbody, tasks, recurringTasks = []) {
     `;
 
     const tdDate = document.createElement('td');
-    tdDate.style.whiteSpace = 'nowrap';
+    tdDate.style.wordBreak = 'break-word';
     tdDate.textContent = fmtDateOnly(task.due_date);
 
     const tdVoice = document.createElement('td');
