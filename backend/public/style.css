@@ -345,6 +345,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   color: var(--ink-soft); font-size: 0.68rem;
   text-transform: uppercase; letter-spacing: .07em;
   font-weight: 700; border-bottom: 2px solid var(--border);
+  white-space: normal; word-break: break-word; line-height: 1.3;
 }
 .data-table td {
   padding: 15px 16px; border-bottom: 1px solid var(--border-soft);
@@ -366,6 +367,80 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .col-priority { width: 8%; }
 .col-status   { width: 11%; }
 .col-actions  { width: 14%; }
+
+/* The width % above assumes each class is used exactly once per table
+   (as in the 9-column "All delegated tasks" table it was designed for).
+   Tables with a different column count/mix reuse these same classes —
+   an 8-column table (no "Assigned to") or a 9-column table that reuses
+   "col-status"/"col-assigned" twice (Overdue's Source+Status,
+   Assigned+Verifier) — so the widths no longer sum to 100% and columns
+   were overlapping/squeezing into each other. These per-table, per-
+   position overrides (by column order, not by reused class name) are
+   the actual fix, and take priority via the #id + nth-child specificity
+   (higher than a lone .col-* class). Each set sums to exactly 100%.
+
+   My Tasks table: Sr No, Task details, Due date, Voice note,
+   Attachment, Priority, Status, Actions (8 cols) */
+#myTasksTable th:nth-child(1),
+#myTasksTable td:nth-child(1) { width: 5%; }
+#myTasksTable th:nth-child(2),
+#myTasksTable td:nth-child(2) { width: 30%; }
+#myTasksTable th:nth-child(3),
+#myTasksTable td:nth-child(3) { width: 12%; }
+#myTasksTable th:nth-child(4),
+#myTasksTable td:nth-child(4) { width: 8%; }
+#myTasksTable th:nth-child(5),
+#myTasksTable td:nth-child(5) { width: 8%; }
+#myTasksTable th:nth-child(6),
+#myTasksTable td:nth-child(6) { width: 9%; }
+#myTasksTable th:nth-child(7),
+#myTasksTable td:nth-child(7) { width: 13%; }
+#myTasksTable th:nth-child(8),
+#myTasksTable td:nth-child(8) { width: 15%; }
+
+/* All delegated tasks table: Sr No, Task details, Planned date,
+   Assigned to, Voice note, Attachment, Priority, Status, Actions (9 cols) */
+#allTasksTable th:nth-child(1),
+#allTasksTable td:nth-child(1) { width: 4%; }
+#allTasksTable th:nth-child(2),
+#allTasksTable td:nth-child(2) { width: 24%; }
+#allTasksTable th:nth-child(3),
+#allTasksTable td:nth-child(3) { width: 11%; }
+#allTasksTable th:nth-child(4),
+#allTasksTable td:nth-child(4) { width: 11%; }
+#allTasksTable th:nth-child(5),
+#allTasksTable td:nth-child(5) { width: 7%; }
+#allTasksTable th:nth-child(6),
+#allTasksTable td:nth-child(6) { width: 7%; }
+#allTasksTable th:nth-child(7),
+#allTasksTable td:nth-child(7) { width: 8%; }
+#allTasksTable th:nth-child(8),
+#allTasksTable td:nth-child(8) { width: 13%; }
+#allTasksTable th:nth-child(9),
+#allTasksTable td:nth-child(9) { width: 15%; }
+
+/* Overdue tasks table: Sr No, Task details, Source, Planned date,
+   Assigned to, Verifier, Priority, Status, Actions (9 cols) —
+   reuses "col-status" for Source+Status and "col-assigned" for
+   Assigned to+Verifier, which is exactly what broke the width math. */
+#overdueTasksTable th:nth-child(1),
+#overdueTasksTable td:nth-child(1) { width: 4%; }
+#overdueTasksTable th:nth-child(2),
+#overdueTasksTable td:nth-child(2) { width: 22%; }
+#overdueTasksTable th:nth-child(3),
+#overdueTasksTable td:nth-child(3) { width: 9%; }
+#overdueTasksTable th:nth-child(4),
+#overdueTasksTable td:nth-child(4) { width: 12%; }
+#overdueTasksTable th:nth-child(5),
+#overdueTasksTable td:nth-child(5) { width: 10%; }
+#overdueTasksTable th:nth-child(6),
+#overdueTasksTable td:nth-child(6) { width: 10%; }
+#overdueTasksTable th:nth-child(7),
+#overdueTasksTable td:nth-child(7) { width: 8%; }
+#overdueTasksTable th:nth-child(8),
+#overdueTasksTable td:nth-child(8) { width: 12%; }
+#overdueTasksTable th:nth-child(9),
+#overdueTasksTable td:nth-child(9) { width: 13%; }
 
 /* Verification requests table columns */
 .col-reqid     { width: 8%; }
@@ -959,169 +1034,6 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 /* pill colours */
 .pill-Completed { background: #d1fae5; color: #065f46; }
 
-
-/* ══════════════════════════════════════════════
-   REPORTS
-══════════════════════════════════════════════ */
-
-/* ══════════════════════════════════════════════
-   REPORTS — screen + PDF layout
-══════════════════════════════════════════════ */
-
-.rpt-screen-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.report-range-btn {
-  padding: 6px 14px;
-  border-radius: 20px;
-  border: 1.5px solid #e2e8f0;
-  background: #fff;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.report-range-btn:hover { border-color: #DC6900; color: #DC6900; }
-.report-range-btn.active {
-  background: #DC6900;
-  border-color: #DC6900;
-  color: #fff;
-  font-weight: 600;
-}
-
-#reportDoc {
-  font-family: 'Inter', system-ui, sans-serif;
-  color: #111;
-  max-width: 1100px;
-  background: #f1f5f9;
-  padding: 28px;
-  border-radius: 16px;
-  margin-top: 8px;
-}
-
-.rpt-doc-header {
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px 24px;
-  border-bottom: none;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-}
-.rpt-doc-header h1 {
-  font-family: 'Sora', sans-serif;
-  font-size: 22px;
-  font-weight: 800;
-  color: #111;
-  margin: 0 0 4px;
-}
-
-.rpt-summary-strip {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-.rpt-stat-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 16px 20px;
-  min-width: 130px;
-  flex: 1;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-}
-
-.rpt-section-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1e293b;
-  border-bottom: 1.5px solid #e2e8f0;
-  padding-bottom: 8px;
-  margin: 24px 0 14px;
-  letter-spacing: 0.1px;
-}
-.rpt-section-sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: #DC6900;
-  margin-left: 8px;
-}
-
-.rpt-emp-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-.rpt-emp-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 14px 16px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.rpt-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  background: #fff;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
-.rpt-table th {
-  background: #f8fafc;
-  color: #374151;
-  font-weight: 700;
-  text-align: left;
-  padding: 9px 12px;
-  border-bottom: 1.5px solid #e5e7eb;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.rpt-table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid #f1f5f9;
-  vertical-align: middle;
-  font-size: 12px;
-}
-.rpt-table tr:last-child td { border-bottom: none; }
-.rpt-table tr:hover td { background: #fafafa; }
-.rpt-matrix th, .rpt-matrix td { text-align: left; }
-
-/* ── Print / PDF ── */
-@media print {
-  body > * { display: none !important; }
-  #appScreen { display: none !important; }
-  #reportDoc {
-    display: block !important;
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%;
-    padding: 24px 32px;
-    background: #fff !important;
-    color: #000;
-    max-width: none;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .rpt-doc-header { box-shadow: none; border-bottom: 2px solid #e5e7eb; border-radius: 0; }
-  .rpt-screen-header { display: none !important; }
-  .rpt-stat-card { border: 1px solid #e5e7eb !important; break-inside: avoid; }
-  .rpt-emp-grid { grid-template-columns: repeat(4, 1fr); }
-  .rpt-table th, .rpt-table td { font-size: 9px; padding: 5px 7px; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-}
-
 /* ── Ticket section headers (Open / Resolved split) ── */
 .ticket-section-header {
   display: flex;
@@ -1319,3 +1231,22 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   background: #ede9fe; color: #5b21b6; border: 1.5px solid #c4b5fd;
 }
 .action-btn.action-updation:hover { background: #ddd6fe; }
+
+/* ================================================================
+   MY TASKS TABS / OTHER PENDING WORK / OVERDUE TABS
+   ================================================================ */
+.my-tasks-tabs {
+  display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 2px solid var(--border-soft);
+}
+.my-tasks-tab-btn {
+  padding: 10px 18px; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-weight: 600; font-size: 0.875rem; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  display: flex; align-items: center; gap: 8px; transition: color .13s, border-color .13s;
+}
+.my-tasks-tab-btn:hover { color: var(--primary-dk); }
+.my-tasks-tab-btn.active { color: var(--primary-dk); border-bottom-color: var(--primary); }
+.my-tasks-tab-badge {
+  background: #ef4444; color: #fff; border-radius: 999px; padding: 1px 7px;
+  font-size: 0.68rem; font-weight: 700; line-height: 1.6;
+}
