@@ -334,7 +334,30 @@
             </div>
 
             <div id="otherPendingLeavesList" class="task-list"></div>
-            <div id="otherPendingVerificationsList" class="task-list" hidden></div>
+
+            <div id="otherPendingVerificationsWrap" hidden>
+              <div class="table-card view-desktop-only">
+                <div class="table-scroll">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th class="col-reqid">Request ID</th>
+                        <th class="col-tasksr">Task Sr No</th>
+                        <th class="col-vproject">Project</th>
+                        <th class="col-vtasktype">Task Type</th>
+                        <th class="col-vsubmitted">Submitted By</th>
+                        <th class="col-vattach">Attachments</th>
+                        <th class="col-vdate">Submission Date</th>
+                        <th class="col-vactions">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="otherPendingVerificationsTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div id="otherPendingVerificationsList" class="task-list view-mobile-only"></div>
+            </div>
+
             <div id="otherPendingTicketsList" class="task-list" hidden></div>
           </div>
         </section>
@@ -494,7 +517,27 @@
             <h2 class="view-title">🗓️ Reschedule requests</h2>
             <p class="view-sub" id="reschedViewSub">Tasks where a new date has been requested.</p>
           </div>
-          <div id="reschedRequestsList" class="task-list"></div>
+          <div class="table-card view-desktop-only">
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Sr No</th>
+                    <th>Employee</th>
+                    <th>Task</th>
+                    <th>Current date</th>
+                    <th>Requested date</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Decided by</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="reschedRequestsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="reschedRequestsList" class="task-list view-mobile-only"></div>
         </section>
 
         <!-- APPLY LEAVE (everyone) -->
