@@ -502,6 +502,12 @@ async function refreshNavBadges() {
       const myResched = await api('/tasks/reschedule-requests').catch(() => []);
       setNavBadge('reschedule-requests', myResched.filter(t => t.reschedule_status === 'Pending').length);
 
+      // My recurring tasks — count of instances still outstanding (today's
+      // due instance plus any backlog that hasn't been marked Completed yet)
+      const myRecurring = await api('/recurring-tasks/my').catch(() => []);
+      const recurringPending = myRecurring.filter(t => t.instance?.status !== 'Completed').length;
+      setNavBadge('recurring', recurringPending);
+
       // Open tickets
       const tickets = await api('/tickets');
       const openTickets = tickets.filter(t => t.status === 'Open').length;
@@ -1779,10 +1785,73 @@ async function loadRescheduleRequests() {
     ? "Employees' requests to move a task's date — approve to apply the new date, or reject to leave it as is."
     : 'Status of the reschedule requests you\'ve sent.';
   wrap.innerHTML = '<div class="empty-state">Loading…</div>';
+  const tbody = document.getElementById('reschedRequestsTableBody');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Loading…</td></tr>`;
   try {
     const tasks = await api('/tasks/reschedule-requests');
     renderRescheduleRequests(wrap, tasks, isAdmin);
+    if (tbody) renderRescheduleRequestsTable(tbody, tasks, isAdmin);
   } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Desktop table view — was previously missing, so the desktop table stayed
+// empty forever even though the nav badge and the mobile card list both had
+// the right count/data.
+function renderRescheduleRequestsTable(tbody, tasks, isAdmin) {
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><span class="emoji">🎉</span>${isAdmin ? 'No reschedule requests pending' : 'You have no reschedule requests'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const tr = document.createElement('tr');
+
+    const tdSr = document.createElement('td');
+    tdSr.textContent = index + 1;
+
+    const tdEmployee = document.createElement('td');
+    tdEmployee.innerHTML = `<strong style="font-weight:600">${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong>`;
+
+    const tdTask = document.createElement('td');
+    tdTask.textContent = task.description ?? '—';
+
+    const tdCurrentDate = document.createElement('td');
+    tdCurrentDate.style.whiteSpace = 'nowrap';
+    tdCurrentDate.textContent = fmtDate(task.target_date);
+
+    const tdRequestedDate = document.createElement('td');
+    tdRequestedDate.style.whiteSpace = 'nowrap';
+    tdRequestedDate.textContent = fmtDateOnly(task.reschedule_requested_date);
+
+    const tdReason = document.createElement('td');
+    tdReason.textContent = task.reschedule_reason || '—';
+
+    const tdStatus = document.createElement('td');
+    const statusPill = task.reschedule_status === 'Pending' ? 'pill-Pending'
+      : task.reschedule_status === 'Approved' ? 'pill-Completed'
+      : 'pill-Rejected';
+    tdStatus.innerHTML = `<span class="pill ${statusPill}">${escapeHtml(task.reschedule_status)}</span>`;
+
+    const tdDecidedBy = document.createElement('td');
+    tdDecidedBy.style.whiteSpace = 'nowrap';
+    if (task.reschedule_status !== 'Pending' && task.reschedule_decided_by_user) {
+      tdDecidedBy.innerHTML = `${escapeHtml(task.reschedule_decided_by_user.full_name)} · ${escapeHtml(fmtDate(task.reschedule_decided_at))}`;
+    } else {
+      tdDecidedBy.textContent = '—';
+    }
+
+    const tdActions = document.createElement('td');
+    tdActions.className = 'row-actions';
+    if (isAdmin && task.reschedule_status === 'Pending') {
+      tdActions.appendChild(makeActionBtn('action-complete', '✅ Approve', () => decideRescheduleRequest(task.id, 'approve')));
+      tdActions.appendChild(makeActionBtn('action-reject', '❌ Reject', () => decideRescheduleRequest(task.id, 'reject')));
+    } else {
+      tdActions.textContent = '—';
+    }
+
+    tr.append(tdSr, tdEmployee, tdTask, tdCurrentDate, tdRequestedDate, tdReason, tdStatus, tdDecidedBy, tdActions);
+    tbody.appendChild(tr);
+  });
 }
 
 function renderRescheduleRequests(wrap, tasks, isAdmin) {
@@ -1835,6 +1904,7 @@ async function decideRescheduleRequest(taskId, decision) {
     });
     showToast(decision === 'approve' ? 'Reschedule approved ✅' : 'Reschedule rejected', 'success');
     loadRescheduleRequests();
+    refreshNavBadges();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -2055,7 +2125,7 @@ els.rescheduleForm.addEventListener('submit', async (e) => {
       method: 'PATCH', body: { target_date: els.rescheduleDate.value }
     });
     showToast('Task rescheduled ✅', 'success');
-    els.rescheduleModal.hidden = true; reloadCurrentTaskView();
+    els.rescheduleModal.hidden = true; reloadCurrentTaskView(); refreshNavBadges();
   } catch (err) { els.rescheduleFormMsg.textContent = err.message; els.rescheduleFormMsg.hidden = false; }
 });
 
@@ -2075,7 +2145,7 @@ els.reschedRequestForm.addEventListener('submit', async (e) => {
       body: { requested_date: els.reschedreqDate.value, reason: els.reschedreqReason.value }
     });
     showToast('Reschedule request sent ✅', 'success');
-    els.reschedRequestModal.hidden = true; reloadCurrentTaskView();
+    els.reschedRequestModal.hidden = true; reloadCurrentTaskView(); refreshNavBadges();
   } catch (err) { els.reschedRequestFormMsg.textContent = err.message; els.reschedRequestFormMsg.hidden = false; }
 });
 
