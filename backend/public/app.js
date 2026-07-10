@@ -267,12 +267,80 @@ function fmtDeadlineDateOnlyWithHours(iso, hours) {
   const d = fmtDateOnly(iso);
   return hours != null ? `${d} · ${hours}h` : d;
 }
-function fmtCalculatedDeadline(createdAtIso, hours) {
-  if (!createdAtIso) return '—';
-  const created = new Date(createdAtIso);
-  const h = Number(hours) || 0;
-  const deadline = new Date(created.getTime() + h * 60 * 60 * 1000);
-  const d = fmtDate(deadline.toISOString());
+
+// ── Office-hours-aware due date calculator ─────────────────────────────────
+// Office hours: 9:30 AM – 6:30 PM, Monday–Saturday (Sunday off), with a
+// 1-hour lunch break from 1:00 PM – 2:00 PM that doesn't count as work time.
+// Due date = task's target date/time + hours_to_complete of *working* time,
+// skipping nights, lunch, and Sundays.
+const OFFICE_HOURS = {
+  startH: 9, startM: 30,
+  endH: 18, endM: 30,
+  lunchStartH: 13, lunchStartM: 0,
+  lunchEndH: 14, lunchEndM: 0
+};
+
+function atTime(date, h, m) {
+  const d = new Date(date);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+// Moves a moment forward to the next valid working instant: not on a Sunday,
+// not before opening, not after closing, and not during lunch.
+function snapToWorkingMoment(date) {
+  let d = new Date(date);
+  for (let guard = 0; guard < 30; guard++) { // guard against any edge-case infinite loop
+    if (d.getDay() === 0) { // Sunday — jump to Monday 9:30
+      d.setDate(d.getDate() + 1);
+      d = atTime(d, OFFICE_HOURS.startH, OFFICE_HOURS.startM);
+      continue;
+    }
+    const dayStart = atTime(d, OFFICE_HOURS.startH, OFFICE_HOURS.startM);
+    const dayEnd = atTime(d, OFFICE_HOURS.endH, OFFICE_HOURS.endM);
+    const lunchStart = atTime(d, OFFICE_HOURS.lunchStartH, OFFICE_HOURS.lunchStartM);
+    const lunchEnd = atTime(d, OFFICE_HOURS.lunchEndH, OFFICE_HOURS.lunchEndM);
+
+    if (d < dayStart) { d = dayStart; continue; }
+    if (d >= dayEnd) {
+      d.setDate(d.getDate() + 1);
+      d = atTime(d, OFFICE_HOURS.startH, OFFICE_HOURS.startM);
+      continue;
+    }
+    if (d >= lunchStart && d < lunchEnd) { d = new Date(lunchEnd); continue; }
+    return d; // valid working instant
+  }
+  return d;
+}
+
+// Adds `hours` of working time (office hours, minus lunch, Mon–Sat only) to
+// a starting datetime and returns the resulting Date.
+function addWorkingHours(startDate, hours) {
+  let remainingMs = (Number(hours) || 0) * 3600000;
+  let current = snapToWorkingMoment(new Date(startDate));
+  if (remainingMs <= 0) return current;
+
+  for (let guard = 0; guard < 1000 && remainingMs > 0; guard++) {
+    const dayEnd = atTime(current, OFFICE_HOURS.endH, OFFICE_HOURS.endM);
+    const lunchStart = atTime(current, OFFICE_HOURS.lunchStartH, OFFICE_HOURS.lunchStartM);
+    const segmentEnd = current < lunchStart ? lunchStart : dayEnd;
+    const availableMs = segmentEnd - current;
+
+    if (remainingMs <= availableMs) {
+      current = new Date(current.getTime() + remainingMs);
+      remainingMs = 0;
+    } else {
+      remainingMs -= availableMs;
+      current = snapToWorkingMoment(segmentEnd);
+    }
+  }
+  return current;
+}
+
+function fmtCalculatedDeadline(targetDateIso, hours) {
+  if (!targetDateIso) return '—';
+  const due = addWorkingHours(targetDateIso, hours);
+  const d = fmtDate(due.toISOString());
   return hours != null ? `${d} · ${hours}h` : d;
 }
 function toDatetimeLocalValue(iso) {
@@ -1288,7 +1356,7 @@ function renderMyTasksTable(tbody, tasks, recurringTasks = []) {
     tdDetails.className = 'task-name-cell';
     tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: false });
 
-    // Due date (calculated from created_at + hours, same as the card view)
+    // Due date (calculated from target date + working hours, same as the card view)
     const tdDate = document.createElement('td');
     tdDate.style.wordBreak = 'break-word';
     tdDate.textContent = getDeadlineHtml(task, false);
@@ -1419,7 +1487,7 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
 function getDeadlineHtml(task, showAssignee) {
   return showAssignee
     ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
-    : fmtCalculatedDeadline(task.created_at, task.hours_to_complete);
+    : fmtCalculatedDeadline(task.target_date, task.hours_to_complete);
 }
 
 function verificationBadgeHtml(task) {
@@ -1816,11 +1884,9 @@ function renderRescheduleRequestsTable(tbody, tasks, isAdmin) {
     tdTask.textContent = task.description ?? '—';
 
     const tdCurrentDate = document.createElement('td');
-    tdCurrentDate.style.whiteSpace = 'nowrap';
     tdCurrentDate.textContent = fmtDate(task.target_date);
 
     const tdRequestedDate = document.createElement('td');
-    tdRequestedDate.style.whiteSpace = 'nowrap';
     tdRequestedDate.textContent = fmtDateOnly(task.reschedule_requested_date);
 
     const tdReason = document.createElement('td');
@@ -1833,7 +1899,6 @@ function renderRescheduleRequestsTable(tbody, tasks, isAdmin) {
     tdStatus.innerHTML = `<span class="pill ${statusPill}">${escapeHtml(task.reschedule_status)}</span>`;
 
     const tdDecidedBy = document.createElement('td');
-    tdDecidedBy.style.whiteSpace = 'nowrap';
     if (task.reschedule_status !== 'Pending' && task.reschedule_decided_by_user) {
       tdDecidedBy.innerHTML = `${escapeHtml(task.reschedule_decided_by_user.full_name)} · ${escapeHtml(fmtDate(task.reschedule_decided_at))}`;
     } else {
