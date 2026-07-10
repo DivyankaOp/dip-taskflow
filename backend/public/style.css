@@ -318,6 +318,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .data-table thead th:last-child  { border-radius: 0 var(--r-lg) 0 0; }
 .table-scroll {
   max-width: 100%;
+  overflow-x: auto;
 }
 
 /* Desktop = table, mobile = cards (used for "All delegated tasks",
@@ -335,7 +336,7 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .perm-col { text-align: center; }
 
 .data-table {
-  width: 100%; border-collapse: collapse; table-layout: fixed;
+  width: 100%; min-width: 920px; border-collapse: collapse; table-layout: fixed;
   font-size: 0.84rem;
 }
 .data-table thead { position: sticky; top: 0; z-index: 2; }
@@ -367,6 +368,15 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 .col-priority { width: 8%; }
 .col-status   { width: 11%; }
 .col-actions  { width: 14%; }
+
+/* Column widths for Reschedule requests table (sums to 100%) */
+.col-resched-emp     { width: 10%; }
+.col-resched-task    { width: 15%; }
+.col-resched-date    { width: 11%; }
+.col-resched-reason  { width: 15%; }
+.col-resched-status  { width: 8%; }
+.col-resched-decided { width: 12%; }
+.col-resched-actions { width: 13%; }
 
 /* The width % above assumes each class is used exactly once per table
    (as in the 9-column "All delegated tasks" table it was designed for).
