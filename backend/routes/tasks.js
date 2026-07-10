@@ -153,12 +153,21 @@ router.get('/my', async (req, res) => {
 // ----------------------------- verification queue (for verifiers/admin) -----------------------------
 router.get('/verifications', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('tasks')
       .select(TASK_SELECT)
-      .eq('verifier_id', req.user.id)
       .eq('verification_status', 'Pending Verification')
       .order('target_date', { ascending: true });
+
+    // Admins have global oversight — they can verify any task, so they see
+    // every pending verification request, not just ones where they were
+    // specifically picked as the verifier. Everyone else only sees the ones
+    // routed to them.
+    if (req.user.role !== 'admin') {
+      query = query.eq('verifier_id', req.user.id);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json(data);
   } catch (err) {
