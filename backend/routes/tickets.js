@@ -228,6 +228,32 @@ router.patch('/:id/solve', async (req, res) => {
       .select(TICKET_SELECT)
       .single();
     if (error) throw error;
+
+    // Un-stick the linked task: it was pushed to 'Ticket Raised' when this
+    // ticket was raised (which also blocks reschedule/verification on it —
+    // see tasks.js). Now that this ticket is resolved, put it back to
+    // 'In Progress', but only if no OTHER open ticket is still pointing at
+    // the same task. Best-effort — must never fail the ticket resolution.
+    const linkedTaskId = data.task?.id;
+    if (linkedTaskId) {
+      try {
+        const { data: otherOpenTickets } = await supabase
+          .from('tickets')
+          .select('id')
+          .eq('task_id', linkedTaskId)
+          .eq('status', 'Open');
+        if (!otherOpenTickets || otherOpenTickets.length === 0) {
+          await supabase
+            .from('tasks')
+            .update({ status: 'In Progress' })
+            .eq('id', linkedTaskId)
+            .eq('status', 'Ticket Raised'); // don't clobber Completed/Rejected etc.
+        }
+      } catch (revertErr) {
+        console.error('Revert task status after ticket solve error:', revertErr.message);
+      }
+    }
+
     res.json(data);
   } catch (err) {
     console.error('Solve ticket error:', err.message);
