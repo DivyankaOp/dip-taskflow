@@ -23,12 +23,15 @@ const TASK_SELECT = `
   accepted_at, rejected_at, sent_for_verification_at, verified_at,
   verification_status, verification_note, verification_attachment_urls,
   correction_voice_url, updation_note,
+  reschedule_status, reschedule_requested_date, reschedule_reason,
+  reschedule_requested_at, reschedule_decided_at,
   project:projects ( id, name ),
   task_type:task_types ( id, name ),
   department:departments ( id, name ),
   assigned_to_user:users!tasks_assigned_to_fkey ( id, full_name ),
   assigned_by_user:users!tasks_assigned_by_fkey ( id, full_name ),
-  verifier:users!tasks_verifier_id_fkey ( id, full_name )
+  verifier:users!tasks_verifier_id_fkey ( id, full_name ),
+  reschedule_decided_by_user:users!tasks_reschedule_decided_by_fkey ( id, full_name )
 `;
 
 async function uploadFile(file, folder) {
@@ -456,8 +459,8 @@ router.patch('/:id/send-updation', async (req, res) => {
   }
 });
 
-// ----------------------------- reschedule (only when admin allowed it) -----------------------------
-router.patch('/:id/reschedule', async (req, res) => {
+// ----------------------------- reschedule (admin only — instant, no approval needed) -----------------------------
+router.patch('/:id/reschedule', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { target_date } = req.body || {};
@@ -466,17 +469,9 @@ router.patch('/:id/reschedule', async (req, res) => {
     }
 
     const { data: existing, error: fetchErr } = await supabase
-      .from('tasks').select('id, assigned_to, rescheduling_possible').eq('id', id).maybeSingle();
+      .from('tasks').select('id').eq('id', id).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
-
-    if (!existing.rescheduling_possible && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Rescheduling was not allowed for this task' });
-    }
-    const isOwnTask = existing.assigned_to === req.user.id;
-    if (!isOwnTask && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'You can only reschedule your own tasks' });
-    }
 
     const { data, error } = await supabase
       .from('tasks')
@@ -490,6 +485,155 @@ router.patch('/:id/reschedule', async (req, res) => {
   } catch (err) {
     console.error('Reschedule error:', err.message);
     res.status(500).json({ error: err.message || 'Could not reschedule task' });
+  }
+});
+
+// ----------------------------- reschedule requests (employee asks, admin approves/rejects) -----------------------------
+// An employee on a task with rescheduling_possible=true can no longer move
+// the date themselves — they file a request here, which shows up for the
+// admin to approve (applies the new date) or reject. The employee can see
+// their own request's status the same way (read-only, no action buttons).
+
+// Employee: request a new date for their own task
+router.post('/:id/reschedule-request', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { requested_date, reason } = req.body || {};
+    if (!requested_date) {
+      return res.status(400).json({ error: 'Please pick the date you want to move this task to' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('id, assigned_to, rescheduling_possible, reschedule_status, status')
+      .eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isOwnTask = existing.assigned_to === req.user.id;
+    if (!isOwnTask && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only request a reschedule on your own tasks' });
+    }
+    if (!existing.rescheduling_possible) {
+      return res.status(403).json({ error: 'Rescheduling was not allowed for this task' });
+    }
+    if (existing.status === 'Completed') {
+      return res.status(400).json({ error: 'This task is already completed' });
+    }
+    if (existing.reschedule_status === 'Pending') {
+      return res.status(400).json({ error: 'A reschedule request is already pending for this task' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        reschedule_status: 'Pending',
+        reschedule_requested_date: requested_date,
+        reschedule_reason: reason && reason.trim() ? reason.trim() : null,
+        reschedule_requested_at: new Date().toISOString(),
+        reschedule_decided_by: null,
+        reschedule_decided_at: null
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('Reschedule request error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not submit reschedule request' });
+  }
+});
+
+// List reschedule requests — admin sees every pending one (to action);
+// everyone else sees only their own (whatever the current status is), read-only.
+router.get('/reschedule-requests', async (req, res) => {
+  try {
+    let query = supabase
+      .from('tasks')
+      .select(TASK_SELECT)
+      .neq('reschedule_status', 'None')
+      .order('reschedule_requested_at', { ascending: false });
+
+    if (req.user.role === 'admin') {
+      query = query.eq('reschedule_status', 'Pending');
+    } else {
+      query = query.eq('assigned_to', req.user.id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('List reschedule requests error:', err.message);
+    res.status(500).json({ error: 'Could not load reschedule requests' });
+  }
+});
+
+// Admin: approve — applies the requested date as the new target date
+router.patch('/:id/reschedule-request/approve', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, reschedule_status, reschedule_requested_date').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+    if (existing.reschedule_status !== 'Pending') {
+      return res.status(400).json({ error: 'This request has already been decided' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        target_date: existing.reschedule_requested_date,
+        reschedule_status: 'Approved',
+        reschedule_decided_by: req.user.id,
+        reschedule_decided_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Approve reschedule error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not approve reschedule request' });
+  }
+});
+
+// Admin: reject — leaves the original target date untouched
+router.patch('/:id/reschedule-request/reject', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks').select('id, reschedule_status').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+    if (existing.reschedule_status !== 'Pending') {
+      return res.status(400).json({ error: 'This request has already been decided' });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        reschedule_status: 'Rejected',
+        reschedule_reason: reason && reason.trim() ? reason.trim() : null,
+        reschedule_decided_by: req.user.id,
+        reschedule_decided_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Reject reschedule error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not reject reschedule request' });
   }
 });
 
