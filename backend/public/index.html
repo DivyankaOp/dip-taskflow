@@ -487,6 +487,16 @@
           <div id="verificationsList" class="task-list view-mobile-only"></div>
         </section>
 
+        <!-- RESCHEDULE REQUESTS — admin sees every pending one (approve/reject);
+             everyone else sees only their own, read-only. -->
+        <section id="view-reschedule-requests" class="view" hidden>
+          <div class="view-heading">
+            <h2 class="view-title">🗓️ Reschedule requests</h2>
+            <p class="view-sub" id="reschedViewSub">Tasks where a new date has been requested.</p>
+          </div>
+          <div id="reschedRequestsList" class="task-list"></div>
+        </section>
+
         <!-- APPLY LEAVE (everyone) -->
         <section id="view-applyleave" class="view" hidden>
           <div class="view-header-row">
@@ -591,7 +601,7 @@
                   <thead>
                     <tr>
                       <th>Employee</th><th>Description</th><th>Frequency</th>
-                      <th>Period</th><th>Checkpoints</th><th>Active</th><th>Overdue</th><th>Actions</th>
+                      <th>Period</th><th>Checkpoints</th><th>Active</th><th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="recurringTasksTableBody"></tbody>
@@ -1154,6 +1164,32 @@
         <div class="modal-actions">
           <button type="button" class="ghost-btn-text" id="cancelRescheduleModal">Cancel</button>
           <button type="submit" class="primary-btn primary-btn-inline">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Request Reschedule Modal (employee — goes to admin for approval, doesn't change the date directly) -->
+  <div id="reschedRequestModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Request a reschedule</h3>
+        <button class="modal-close" id="closeReschedRequestModal">&times;</button>
+      </div>
+      <form id="reschedRequestForm" class="modal-body">
+        <p class="form-note" style="margin:0 0 14px">This sends a request to the admin — the task's date won't change until it's approved.</p>
+        <div class="field">
+          <label for="reschedreq-date">Requested new date <span class="req">*</span></label>
+          <input id="reschedreq-date" type="date" required />
+        </div>
+        <div class="field">
+          <label for="reschedreq-reason">Reason <span class="optional">(optional)</span></label>
+          <textarea id="reschedreq-reason" rows="3" placeholder="Why do you need this task moved?"></textarea>
+        </div>
+        <p id="reschedRequestFormMsg" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn-text" id="cancelReschedRequestModal">Cancel</button>
+          <button type="submit" class="primary-btn primary-btn-inline">Send request</button>
         </div>
       </form>
     </div>
