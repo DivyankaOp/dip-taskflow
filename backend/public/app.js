@@ -170,6 +170,13 @@ const els = {
   rescheduleDate: document.getElementById('reschedule-date'),
   closeRescheduleModal: document.getElementById('closeRescheduleModal'),
   cancelRescheduleModal: document.getElementById('cancelRescheduleModal'),
+  reschedRequestModal: document.getElementById('reschedRequestModal'),
+  reschedRequestForm: document.getElementById('reschedRequestForm'),
+  reschedRequestFormMsg: document.getElementById('reschedRequestFormMsg'),
+  reschedreqDate: document.getElementById('reschedreq-date'),
+  reschedreqReason: document.getElementById('reschedreq-reason'),
+  closeReschedRequestModal: document.getElementById('closeReschedRequestModal'),
+  cancelReschedRequestModal: document.getElementById('cancelReschedRequestModal'),
 
   reassignModal: document.getElementById('reassignModal'),
   reassignForm: document.getElementById('reassignForm'),
@@ -374,6 +381,22 @@ function buildNav() {
   els.navList.appendChild(taskLabel);
   taskItems.forEach((t) => els.navList.appendChild(makeNavButton(t.key, t.label)));
 
+  // Verification — moved right after Tasks so it's not buried under Leave/Administration
+  if (isAdmin || state.user.can_verify) {
+    const verifyLabel = document.createElement('div');
+    verifyLabel.className = 'nav-section-label'; verifyLabel.textContent = 'Verification';
+    els.navList.appendChild(verifyLabel);
+    els.navList.appendChild(makeNavButton('verifications', '🔎 Verification requests'));
+  }
+
+  // Reschedule requests — visible to everyone. Admin sees every pending
+  // request with Approve/Reject; anyone else sees only their own requests
+  // and their current status (read-only).
+  const reschedLabel = document.createElement('div');
+  reschedLabel.className = 'nav-section-label'; reschedLabel.textContent = 'Reschedule';
+  els.navList.appendChild(reschedLabel);
+  els.navList.appendChild(makeNavButton('reschedule-requests', '🗓️ Reschedule requests'));
+
   if (isAdmin || canAddEmployee || canAddSite) {
     const adminLabel = document.createElement('div');
     adminLabel.className = 'nav-section-label'; adminLabel.textContent = 'Administration';
@@ -393,13 +416,6 @@ function buildNav() {
   els.navList.appendChild(leaveLabel);
   els.navList.appendChild(makeNavButton('applyleave', '🌴 Apply Leave'));
   if (isAdmin) els.navList.appendChild(makeNavButton('leaveapprovals', '🗒️ Leave Approvals'));
-
-  if (isAdmin || state.user.can_verify) {
-    const verifyLabel = document.createElement('div');
-    verifyLabel.className = 'nav-section-label'; verifyLabel.textContent = 'Verification';
-    els.navList.appendChild(verifyLabel);
-    els.navList.appendChild(makeNavButton('verifications', '🔎 Verification requests'));
-  }
 
   // Corrections section — visible to all employees (admin doesn't get corrections, they assign them)
   if (!isAdmin) {
@@ -481,6 +497,11 @@ async function refreshNavBadges() {
         setNavBadge('verifications', verifs.length);
       }
 
+      // Reschedule requests (own — any status change worth a glance, but
+      // badge only counts ones still awaiting a decision)
+      const myResched = await api('/tasks/reschedule-requests').catch(() => []);
+      setNavBadge('reschedule-requests', myResched.filter(t => t.reschedule_status === 'Pending').length);
+
       // Open tickets
       const tickets = await api('/tickets');
       const openTickets = tickets.filter(t => t.status === 'Open').length;
@@ -502,6 +523,10 @@ async function refreshNavBadges() {
 
       setNavBadge('all', pendingCount);
       setNavBadge('overdue', overdueCount + overdueRecurringCount);
+
+      // Reschedule requests awaiting a decision
+      const reschedReqs = await api('/tasks/reschedule-requests').catch(() => []);
+      setNavBadge('reschedule-requests', reschedReqs.length);
 
       // Open tickets
       const tickets = await api('/tickets');
@@ -531,6 +556,7 @@ function switchView(viewKey) {
   if (viewKey === 'masterdata')    loadMasterDataView();
   if (viewKey === 'permissions')   loadPermissions();
   if (viewKey === 'verifications') loadVerifications();
+  if (viewKey === 'reschedule-requests') loadRescheduleRequests();
   if (viewKey === 'tickets')       loadTickets();
   if (viewKey === 'tickets-open')     loadTicketsFiltered('Open');
   if (viewKey === 'tickets-resolved') loadTicketsFiltered('Resolved');
@@ -1406,7 +1432,11 @@ function buildCardMenuItems(task, { showAssignee }) {
       }});
     }
   } else if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
-    items.push({ label: '🗓️ Reschedule', onClick: () => openRescheduleModal(task.id, task.target_date) });
+    if (task.reschedule_status === 'Pending') {
+      items.push({ label: '🗓️ Reschedule request pending…', onClick: () => switchView('reschedule-requests'), disabled: true });
+    } else {
+      items.push({ label: '🗓️ Request reschedule', onClick: () => openReschedRequestModal(task.id) });
+    }
   }
 
   if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
@@ -1545,6 +1575,7 @@ function reloadCurrentTaskView() {
   else if (state.activeView === 'my')       loadMyTasks();
   else if (state.activeView === 'overdue')  loadOverdueTasks();
   else if (state.activeView === 'verifications') loadVerifications();
+  else if (state.activeView === 'reschedule-requests') loadRescheduleRequests();
 }
 
 document.addEventListener('click', () => {
@@ -1688,6 +1719,76 @@ async function loadVerifications() {
     const tasks = await api('/tasks/verifications');
     renderVerificationsTable(els.verificationsTableBody, tasks);
     renderTaskList(els.verificationsList, tasks, { showAssignee: true, allowActions: false, verificationMode: true });
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ─── Reschedule requests ────────────────────────────────────────────────────
+// Admin: every request still awaiting a decision, with Approve/Reject.
+// Everyone else: only their own requests (any status), read-only.
+async function loadRescheduleRequests() {
+  const wrap = document.getElementById('reschedRequestsList');
+  const sub = document.getElementById('reschedViewSub');
+  const isAdmin = state.user.role === 'admin';
+  sub.textContent = isAdmin
+    ? "Employees' requests to move a task's date — approve to apply the new date, or reject to leave it as is."
+    : 'Status of the reschedule requests you\'ve sent.';
+  wrap.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const tasks = await api('/tasks/reschedule-requests');
+    renderRescheduleRequests(wrap, tasks, isAdmin);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function renderRescheduleRequests(wrap, tasks, isAdmin) {
+  if (!tasks.length) {
+    wrap.innerHTML = `<div class="empty-state"><span class="emoji">🎉</span>${isAdmin ? 'No reschedule requests pending' : 'You have no reschedule requests'}</div>`;
+    return;
+  }
+  wrap.innerHTML = '';
+  tasks.forEach((task) => {
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    const statusPill = task.reschedule_status === 'Pending' ? 'pill-Pending'
+      : task.reschedule_status === 'Approved' ? 'pill-Completed'
+      : 'pill-Rejected';
+    card.innerHTML = `
+      <div class="task-card-header">
+        <span class="pill ${statusPill}">${escapeHtml(task.reschedule_status)}</span>
+        <span style="font-size:12px;color:#888">${escapeHtml(task.project?.name ?? '')}</span>
+      </div>
+      <div class="task-card-body">
+        ${isAdmin ? `<div class="task-detail-line"><span class="task-detail-label">Employee:</span> ${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</div>` : ''}
+        <div class="task-detail-line"><strong>${escapeHtml(task.description ?? '')}</strong></div>
+        <div class="task-detail-line"><span class="task-detail-label">Current date:</span> ${escapeHtml(fmtDate(task.target_date))}</div>
+        <div class="task-detail-line"><span class="task-detail-label">Requested date:</span> ${escapeHtml(fmtDateOnly(task.reschedule_requested_date))}</div>
+        ${task.reschedule_reason ? `<div class="task-detail-line"><span class="task-detail-label">Reason:</span> ${escapeHtml(task.reschedule_reason)}</div>` : ''}
+        ${task.reschedule_status !== 'Pending' && task.reschedule_decided_by_user ? `<div class="task-detail-line"><span class="task-detail-label">Decided by:</span> ${escapeHtml(task.reschedule_decided_by_user.full_name)} · ${escapeHtml(fmtDate(task.reschedule_decided_at))}</div>` : ''}
+      </div>
+      ${isAdmin && task.reschedule_status === 'Pending' ? `
+      <div class="task-card-actions">
+        <button class="action-btn action-complete resched-approve-btn">✅ Approve</button>
+        <button class="action-btn action-reject resched-reject-btn">❌ Reject</button>
+      </div>` : ''}
+    `;
+    if (isAdmin && task.reschedule_status === 'Pending') {
+      card.querySelector('.resched-approve-btn').addEventListener('click', () => decideRescheduleRequest(task.id, 'approve'));
+      card.querySelector('.resched-reject-btn').addEventListener('click', () => decideRescheduleRequest(task.id, 'reject'));
+    }
+    wrap.appendChild(card);
+  });
+}
+
+async function decideRescheduleRequest(taskId, decision) {
+  let reason = '';
+  if (decision === 'reject') {
+    reason = prompt('Reason for rejecting this reschedule request (optional):') || '';
+  }
+  try {
+    await api(`/tasks/${taskId}/reschedule-request/${decision}`, {
+      method: 'PATCH', body: decision === 'reject' ? { reason } : {}
+    });
+    showToast(decision === 'approve' ? 'Reschedule approved ✅' : 'Reschedule rejected', 'success');
+    loadRescheduleRequests();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -1910,6 +2011,26 @@ els.rescheduleForm.addEventListener('submit', async (e) => {
     showToast('Task rescheduled ✅', 'success');
     els.rescheduleModal.hidden = true; reloadCurrentTaskView();
   } catch (err) { els.rescheduleFormMsg.textContent = err.message; els.rescheduleFormMsg.hidden = false; }
+});
+
+// ─── Reschedule request (employee — goes to admin for approval) ───────────────
+function openReschedRequestModal(taskId) {
+  state.pendingTaskId = taskId; els.reschedRequestFormMsg.hidden = true;
+  els.reschedreqDate.value = ''; els.reschedreqReason.value = '';
+  els.reschedRequestModal.hidden = false;
+}
+els.closeReschedRequestModal.addEventListener('click', () => { els.reschedRequestModal.hidden = true; });
+els.cancelReschedRequestModal.addEventListener('click', () => { els.reschedRequestModal.hidden = true; });
+els.reschedRequestForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); els.reschedRequestFormMsg.hidden = true;
+  try {
+    await api(`/tasks/${state.pendingTaskId}/reschedule-request`, {
+      method: 'POST',
+      body: { requested_date: els.reschedreqDate.value, reason: els.reschedreqReason.value }
+    });
+    showToast('Reschedule request sent ✅', 'success');
+    els.reschedRequestModal.hidden = true; reloadCurrentTaskView();
+  } catch (err) { els.reschedRequestFormMsg.textContent = err.message; els.reschedRequestFormMsg.hidden = false; }
 });
 
 // ─── Reassign ─────────────────────────────────────────────────────────────────
@@ -3107,16 +3228,13 @@ function freqLabel(task) {
 function renderAdminRecurringTable(tasks) {
   const tbody = recEls.adminTable();
   if (!tasks.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">No recurring tasks yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No recurring tasks yet</td></tr>`;
     return;
   }
   tbody.innerHTML = '';
   tasks.forEach(task => {
     const tr = document.createElement('tr');
     const cpCount = (task.checkpoints || []).length;
-    const overdueCell = task.is_overdue
-      ? `<span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''} overdue</span>`
-      : `<span style="color:#aaa">—</span>`;
     tr.innerHTML = `
       <td><strong>${escapeHtml(task.assigned_to_user?.full_name ?? '—')}</strong></td>
       <td style="max-width:200px">${escapeHtml(task.description?.slice(0,80) ?? '—')}${task.description?.length > 80 ? '…' : ''}</td>
@@ -3124,7 +3242,6 @@ function renderAdminRecurringTable(tasks) {
       <td style="font-size:12px">${escapeHtml(task.start_date ?? '—')} → ${escapeHtml(task.end_date ?? 'ongoing')}</td>
       <td>${cpCount ? `${cpCount} checkpoint${cpCount>1?'s':''}` : '<span style="color:#aaa">None</span>'}</td>
       <td><span class="pill ${task.is_active ? 'pill-In-Progress' : 'pill-Rejected'}">${task.is_active ? 'Active' : 'Inactive'}</span></td>
-      <td>${overdueCell}</td>
       <td class="row-actions"></td>
     `;
     const actCell = tr.lastElementChild;
@@ -3157,7 +3274,6 @@ function renderAdminRecurringCards(tasks) {
         <div class="task-detail-line"><span class="task-detail-label">Task:</span> ${escapeHtml(task.description?.slice(0,100) ?? '—')}${task.description?.length>100?'…':''}</div>
         <div class="task-detail-line"><span class="task-detail-label">Period:</span> ${escapeHtml(task.start_date)} → ${escapeHtml(task.end_date ?? 'ongoing')}</div>
         <div class="task-detail-line"><span class="task-detail-label">Checkpoints:</span> ${cpCount ? `${cpCount}` : 'None'}</div>
-        ${task.is_overdue ? `<div class="task-detail-line"><span class="pill pill-Rejected">${task.overdue_days} day${task.overdue_days > 1 ? 's' : ''} overdue</span></div>` : ''}
       </div>
       <div class="task-card-actions">
         <button class="action-btn action-accept edit-rec-btn">✏️ Edit</button>
