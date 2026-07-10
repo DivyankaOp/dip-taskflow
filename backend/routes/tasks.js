@@ -475,13 +475,24 @@ router.patch('/:id/reschedule', requireAdmin, async (req, res) => {
     }
 
     const { data: existing, error: fetchErr } = await supabase
-      .from('tasks').select('id').eq('id', id).maybeSingle();
+      .from('tasks').select('id, reschedule_status').eq('id', id).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
 
+    const updates = { target_date };
+    // If an employee's reschedule request was still pending, this direct
+    // admin reschedule supersedes it — clear it out so it can't later be
+    // approved and silently overwrite the date the admin just set here.
+    if (existing.reschedule_status === 'Pending') {
+      updates.reschedule_status = 'Rejected';
+      updates.reschedule_reason = 'Superseded — admin rescheduled this task directly';
+      updates.reschedule_decided_by = req.user.id;
+      updates.reschedule_decided_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from('tasks')
-      .update({ target_date })
+      .update(updates)
       .eq('id', id)
       .select(TASK_SELECT)
       .single();
