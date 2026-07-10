@@ -298,13 +298,19 @@ router.patch(
       }
 
       const { data: existing, error: fetchErr } = await supabase
-        .from('tasks').select('id, assigned_to').eq('id', id).maybeSingle();
+        .from('tasks').select('id, assigned_to, status, reschedule_status').eq('id', id).maybeSingle();
       if (fetchErr) throw fetchErr;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
 
       const isOwnTask = existing.assigned_to === req.user.id;
       if (!isOwnTask && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'You can only send your own tasks for verification' });
+      }
+      if (existing.status === 'Ticket Raised') {
+        return res.status(400).json({ error: 'Cannot send for verification while a ticket is raised on this task' });
+      }
+      if (existing.reschedule_status === 'Pending') {
+        return res.status(400).json({ error: 'Cannot send for verification while a reschedule request is pending approval' });
       }
 
       const files = req.files || [];
@@ -505,7 +511,7 @@ router.post('/:id/reschedule-request', async (req, res) => {
 
     const { data: existing, error: fetchErr } = await supabase
       .from('tasks')
-      .select('id, assigned_to, rescheduling_possible, reschedule_status, status')
+      .select('id, assigned_to, rescheduling_possible, reschedule_status, status, verification_status')
       .eq('id', id).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
@@ -519,6 +525,12 @@ router.post('/:id/reschedule-request', async (req, res) => {
     }
     if (existing.status === 'Completed') {
       return res.status(400).json({ error: 'This task is already completed' });
+    }
+    if (existing.status === 'Ticket Raised') {
+      return res.status(400).json({ error: 'Cannot request a reschedule while a ticket is raised on this task' });
+    }
+    if (existing.verification_status === 'Pending Verification') {
+      return res.status(400).json({ error: 'Cannot request a reschedule while this task is pending verification' });
     }
     if (existing.reschedule_status === 'Pending') {
       return res.status(400).json({ error: 'A reschedule request is already pending for this task' });
