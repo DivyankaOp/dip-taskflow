@@ -534,6 +534,8 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
   cursor: pointer; transition: background .12s;
 }
 .card-menu-item:hover { background: var(--bg); }
+.card-menu-item:disabled { opacity: 0.5; cursor: not-allowed; background: none; }
+.card-menu-item:disabled:hover { background: none; }
 
 /* Employee table specific */
 .status-toggle {
