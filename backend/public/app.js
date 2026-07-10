@@ -524,6 +524,12 @@ async function refreshNavBadges() {
       setNavBadge('all', pendingCount);
       setNavBadge('overdue', overdueCount + overdueRecurringCount);
 
+      // Admin's own "My tasks" — admins can be personally assigned tasks too
+      // (see loadMyTasks). This was missing before, same gap as verifications.
+      const myTasks = await api('/tasks/my').catch(() => []);
+      const myPending = myTasks.filter(t => t.status === 'Pending' || t.status === 'In Progress').length;
+      setNavBadge('my', myPending);
+
       // Verifications where THIS admin is the chosen verifier (admins can be
       // picked as a verifier too — see /master/verifiers). This was missing
       // before, so the badge never showed up for admins even when tasks were
@@ -539,6 +545,10 @@ async function refreshNavBadges() {
       const tickets = await api('/tickets');
       const openTickets = tickets.filter(t => t.status === 'Open').length;
       setNavBadge('tickets-open', openTickets);
+
+      // Pending leave requests awaiting approval
+      const pendingLeaves = await api('/leaves/all?status=Pending').catch(() => []);
+      setNavBadge('leaveapprovals', pendingLeaves.length);
     }
   } catch(e) { /* silently fail — badges are non-critical */ }
 }
@@ -1142,7 +1152,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const sub = btn.dataset.subtab;
       document.getElementById('otherPendingLeavesList').hidden = sub !== 'leave';
-      document.getElementById('otherPendingVerificationsList').hidden = sub !== 'verification';
+      document.getElementById('otherPendingVerificationsWrap').hidden = sub !== 'verification';
       document.getElementById('otherPendingTicketsList').hidden = sub !== 'tickets';
     });
   });
@@ -1156,11 +1166,13 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadOtherPendingWork() {
   const leavesWrap = document.getElementById('otherPendingLeavesList');
   const verifWrap = document.getElementById('otherPendingVerificationsList');
+  const verifTableBody = document.getElementById('otherPendingVerificationsTableBody');
   const ticketsWrap = document.getElementById('otherPendingTicketsList');
   if (!leavesWrap || !verifWrap || !ticketsWrap) return;
 
   leavesWrap.innerHTML = '<div class="empty-state">Loading…</div>';
   verifWrap.innerHTML = '<div class="empty-state">Loading…</div>';
+  if (verifTableBody) verifTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
   ticketsWrap.innerHTML = '<div class="empty-state">Loading…</div>';
 
   try {
@@ -1173,6 +1185,9 @@ async function loadOtherPendingWork() {
 
     renderOtherPendingLeaves(leaves, leavesWrap);
     renderOtherPendingVerifications(verifications, verifWrap);
+    // Same renderer used by the main "Verification requests" page — so
+    // Verify / Send for Correction / Updation all work identically from here.
+    if (verifTableBody) renderVerificationsTable(verifTableBody, verifications);
     renderOtherPendingTickets(openTickets, ticketsWrap);
 
     setBadge('otherPendingLeaveBadge', leaves.length);
