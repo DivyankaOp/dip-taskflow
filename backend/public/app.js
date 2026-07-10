@@ -264,7 +264,7 @@ function fmtDateOnly(iso) {
   });
 }
 function fmtDeadlineDateOnlyWithHours(iso, hours) {
-  const d = fmtDateOnly(iso);
+  const d = fmtDate(iso); // full date + time, not just the date, so it's unambiguous
   return hours != null ? `${d} · ${hours}h` : d;
 }
 
@@ -1078,7 +1078,9 @@ function buildOverdueMenuElement(task) {
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
+    const willShow = menuList.hidden;
     menuList.hidden = !menuList.hidden;
+    if (willShow) positionCardMenu(menuBtn, menuList);
   });
   wrap.appendChild(menuBtn); wrap.appendChild(menuList);
   return wrap;
@@ -1610,7 +1612,9 @@ function buildCardMenuElement(task, { showAssignee }) {
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     document.querySelectorAll('.card-menu-list').forEach((l) => { if (l !== menuList) l.hidden = true; });
+    const willShow = menuList.hidden;
     menuList.hidden = !menuList.hidden;
+    if (willShow) positionCardMenu(menuBtn, menuList);
   });
   wrap.appendChild(menuBtn); wrap.appendChild(menuList);
   return wrap;
@@ -1646,36 +1650,44 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     card.querySelector('.task-card-top').appendChild(buildCardMenuElement(task, { showAssignee }));
   }
   const actionsEl = card.querySelector('.task-actions');
-//   if (verificationMode) {
-//     // Two-step: "Start Verification" → then Verify or Send for Correction
-//     const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
-//       actionsEl.innerHTML = '';
-//       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
-//         if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
-//       }));
-
-//       actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
-//       if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
-//     }));
-//     actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-//     actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
-//     return card;
-  
-//   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
-//   return card;
-// }
-if (verificationMode) {
-    actionsEl.appendChild(makeActionBtn('action-complete', '✅ Verify', () => {
-      if (confirm('Mark this task as Verified?')) verifyApprove(task.id);
-    }));
-    actionsEl.appendChild(makeActionBtn('action-reject', '↩ Send for Correction', () => openCorrectionModal(task.id)));
-    actionsEl.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
+  if (verificationMode) {
+    if (activeVerifications.has(task.id)) {
+      startVerificationInline(task.id, actionsEl); // already started before re-render
+    } else {
+      actionsEl.appendChild(makeActionBtn('action-start', '🔎 Start Verification', () => {
+        activeVerifications.add(task.id);
+        startVerificationInline(task.id, actionsEl);
+      }));
+    }
     return card;
   }
 
   buildPrimaryStatusButtons(task, { showAssignee, allowActions }).forEach((btn) => actionsEl.appendChild(btn));
   return card;
 }
+// The dropdown menu (.card-menu-list) is position:fixed with no explicit
+// top/left, so it relies on the browser's implicit "static position" —
+// fragile, and it can end up off-screen or collapsed to nothing whenever an
+// ancestor's layout/width changes (e.g. table column width tweaks). This
+// sets real viewport coordinates instead, so it always shows up right next
+// to the button that opened it, regardless of table layout.
+function positionCardMenu(menuBtn, menuList) {
+  const rect = menuBtn.getBoundingClientRect();
+  const menuWidth = menuList.offsetWidth || 200;
+  let left = rect.right - menuWidth;
+  left = Math.min(left, window.innerWidth - menuWidth - 8);
+  left = Math.max(8, left);
+
+  let top = rect.bottom + 4;
+  const menuHeight = menuList.offsetHeight || 160;
+  if (top + menuHeight > window.innerHeight - 8) {
+    top = rect.top - menuHeight - 4;
+    if (top < 8) top = 8;
+  }
+  menuList.style.top = `${top}px`;
+  menuList.style.left = `${left}px`;
+}
+
 function makeActionBtn(cls, label, onClick) {
   const btn = document.createElement('button');
   btn.className = `action-btn ${cls}`; btn.textContent = label;
@@ -2159,17 +2171,16 @@ function renderVerificationsTable(tbody, tasks) {
       tdActions.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     }
 
-    // if (activeVerifications.has(task.id)) {
-    //   // Already started before re-render — show verify/correction buttons directly
-    //   showVerifyActions();
-    // } else {
-    //   const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
-    //     activeVerifications.add(task.id);
-    //     showVerifyActions();
-    //   });
-    //   tdActions.appendChild(startBtn);
-    // }
-showVerifyActions();
+    if (activeVerifications.has(task.id)) {
+      // Already started before re-render — show verify/correction buttons directly
+      showVerifyActions();
+    } else {
+      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
+        activeVerifications.add(task.id);
+        showVerifyActions();
+      });
+      tdActions.appendChild(startBtn);
+    }
     tr.append(tdReqId, tdSr, tdProject, tdTaskType, tdSubmittedBy, tdAttach, tdDate, tdActions);
     tbody.appendChild(tr);
   });
