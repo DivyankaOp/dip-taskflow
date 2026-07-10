@@ -524,6 +524,13 @@ async function refreshNavBadges() {
       setNavBadge('all', pendingCount);
       setNavBadge('overdue', overdueCount + overdueRecurringCount);
 
+      // Verifications where THIS admin is the chosen verifier (admins can be
+      // picked as a verifier too — see /master/verifiers). This was missing
+      // before, so the badge never showed up for admins even when tasks were
+      // sitting in their verification queue.
+      const adminVerifs = await api('/tasks/verifications').catch(() => []);
+      setNavBadge('verifications', adminVerifs.length);
+
       // Reschedule requests awaiting a decision
       const reschedReqs = await api('/tasks/reschedule-requests').catch(() => []);
       setNavBadge('reschedule-requests', reschedReqs.length);
@@ -650,8 +657,15 @@ async function loadAllTasks() {
     let tasks = await api(`/tasks/all${query ? `?${query}` : ''}`);
 
     if (!els.filterStatus.value) {
+      // Default view: everything still "active" — Pending, In Progress,
+      // Ticket Raised, and anything sitting under verification. Only
+      // Completed (and Rejected) tasks are hidden by default; pick the
+      // "Completed" status filter explicitly to see those.
       tasks = tasks.filter(
-        (t) => t.status === 'Pending' || t.verification_status === 'Pending Verification'
+        (t) => t.status === 'Pending'
+          || t.status === 'In Progress'
+          || t.status === 'Ticket Raised'
+          || t.verification_status === 'Pending Verification'
       );
     }
 
@@ -1411,6 +1425,11 @@ function buildCardMenuItems(task, { showAssignee }) {
   const canManageThisTask = state.user.role === 'admin' || isActuallyMine;
   const isPendingVerification = task.verification_status === 'Pending Verification';
   const isAdminManaging = showAssignee && state.user.role === 'admin';
+  // A ticket is open on this task, or a reschedule request is awaiting a
+  // decision — both temporarily lock out "Request reschedule" and "Send for
+  // verification" until resolved/decided (mirrored on the backend too).
+  const isTicketRaised = task.status === 'Ticket Raised';
+  const isReschedulePending = task.reschedule_status === 'Pending';
   const items = [];
 
   // Employee hasn't accepted/rejected this task yet — no extra options until
@@ -1432,7 +1451,9 @@ function buildCardMenuItems(task, { showAssignee }) {
       }});
     }
   } else if (task.rescheduling_possible && task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
-    if (task.reschedule_status === 'Pending') {
+    if (isTicketRaised) {
+      items.push({ label: '🗓️ Reschedule blocked — ticket raised', disabled: true });
+    } else if (isReschedulePending) {
       items.push({ label: '🗓️ Reschedule request pending…', onClick: () => switchView('reschedule-requests'), disabled: true });
     } else {
       items.push({ label: '🗓️ Request reschedule', onClick: () => openReschedRequestModal(task.id) });
@@ -1440,7 +1461,13 @@ function buildCardMenuItems(task, { showAssignee }) {
   }
 
   if (task.status !== 'Completed' && !isPendingVerification && canManageThisTask) {
-    items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
+    if (isTicketRaised) {
+      items.push({ label: '🔎 Verification blocked — ticket raised', disabled: true });
+    } else if (isReschedulePending) {
+      items.push({ label: '🔎 Verification blocked — reschedule pending', disabled: true });
+    } else {
+      items.push({ label: '🔎 Send for verification', onClick: () => openVerifyModal(task.id) });
+    }
   }
   items.push({ label: '🎫 Raise a ticket', onClick: () => openTicketModal(task.id, task.description, task.project?.name) });
   return items;
@@ -1483,7 +1510,11 @@ function buildCardMenuElement(task, { showAssignee }) {
   items.forEach((item) => {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'card-menu-item'; btn.textContent = item.label;
-    btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
+    if (item.disabled) {
+      btn.disabled = true;
+    } else {
+      btn.addEventListener('click', () => { menuList.hidden = true; item.onClick(); });
+    }
     menuList.appendChild(btn);
   });
 
