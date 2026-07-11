@@ -6,6 +6,20 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
+// Both "toast says success but the date shown afterwards is still the old
+// one" reports (direct admin reschedule AND reschedule-request approval)
+// share one thing in common: they both PATCH successfully, then immediately
+// re-fetch via a GET to redraw the list. If that GET gets served from a
+// cache (browser heuristic cache, or an intermediary/mobile-network proxy)
+// instead of hitting this server, the redraw shows the pre-update snapshot
+// even though the database was updated correctly. None of the GET routes
+// below were sending explicit cache headers, so this was left to browser/
+// proxy defaults. Forcing no-store removes that possibility entirely.
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // 5 MB per file by default — change MAX_FILE_SIZE_MB below if you actually need a larger limit.
 const MAX_FILE_SIZE_MB = 5;
 const upload = multer({
