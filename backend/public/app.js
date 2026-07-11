@@ -222,16 +222,11 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   if (!isForm && body) headers['Content-Type'] = 'application/json';
-  // const res = await fetch(`${API_BASE}${path}`, {
-  //   method, headers,
-  //   cache: 'no-store',
-  //   body: isForm ? body : (body ? JSON.stringify(body) : undefined)
-  // });
   const res = await fetch(`${API_BASE}${path}`, {
-  method, headers,
-  cache: 'no-store',
-  body: isForm ? body : (body ? JSON.stringify(body) : undefined)
-});
+    method, headers,
+    cache: 'no-store',
+    body: isForm ? body : (body ? JSON.stringify(body) : undefined)
+  });
   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
@@ -269,14 +264,11 @@ function fmtDateOnly(iso) {
     day: '2-digit', month: 'short', year: 'numeric'
   });
 }
-// function fmtDeadlineDateOnlyWithHours(iso, hours) {
-//   const d = fmtDate(iso); // full date + time, not just the date, so it's unambiguous
-//   return hours != null ? `${d} · ${hours}h` : d;
-// }
 function fmtDeadlineDateOnlyWithHours(iso, hours) {
-  const d = fmtDateOnly(iso);   // ← fmtDate se fmtDateOnly
+  const d = fmtDate(iso); // full date + time, not just the date, so it's unambiguous
   return hours != null ? `${d} · ${hours}h` : d;
 }
+
 // ── Office-hours-aware due date calculator ─────────────────────────────────
 // Office hours: 9:30 AM – 6:30 PM, Monday–Saturday (Sunday off), with a
 // 1-hour lunch break from 1:00 PM – 2:00 PM that doesn't count as work time.
@@ -711,41 +703,26 @@ async function refreshEmployeeDropdowns() {
 // lunch excluded, Sundays skipped) that's already used to show deadlines
 // everywhere else in the app, so what the admin sees here always matches
 // what employees/verifiers see later on the task itself.
-
-// function updateTaskDeadlinePreview() {
-//   const previewEl = document.getElementById('f-deadline-preview');
-//   if (!previewEl) return;
-//   const hoursRaw = document.getElementById('f-hours').value;
-//   const dateRaw  = document.getElementById('f-targetdate').value;
-
-//   if (!dateRaw) {
-//     previewEl.innerHTML = 'Pick an hours value and a target date to see the calculated completion deadline (office hours: 9:30 AM–6:30 PM, 1–2 PM lunch excluded).';
-//     return;
-//   }
-//   const hours = hoursRaw === '' ? null : Number(hoursRaw);
-//   if (hours == null || Number.isNaN(hours) || hours <= 0) {
-//     previewEl.innerHTML = `Starts <strong>${escapeHtml(fmtDate(dateRaw))}</strong> — add hours to see the calculated completion deadline.`;
-//     return;
-//   }
-//   const due = addWorkingHours(dateRaw, hours);
-//   previewEl.innerHTML = `⏱ With <strong>${hours}h</strong> of working time from <strong>${escapeHtml(fmtDate(dateRaw))}</strong>, this task is due by <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>.`;
-// }
-// document.getElementById('f-hours').addEventListener('input', updateTaskDeadlinePreview);
-// document.getElementById('f-targetdate').addEventListener('input', updateTaskDeadlinePreview);
-// updateTaskDeadlinePreview();
 function updateTaskDeadlinePreview() {
   const previewEl = document.getElementById('f-deadline-preview');
   if (!previewEl) return;
   const hoursRaw = document.getElementById('f-hours').value;
-  const hours = hoursRaw === '' ? null : Number(hoursRaw);
-  if (hours == null || Number.isNaN(hours) || hours <= 0) {
-    previewEl.innerHTML = 'Enter hours to complete to see the employee\'s calculated deadline (office hours: 9:30 AM–6:30 PM, 1–2 PM lunch excluded).';
+  const dateRaw  = document.getElementById('f-targetdate').value;
+
+  if (!dateRaw) {
+    previewEl.innerHTML = 'Pick an hours value and a target date to see the calculated completion deadline (office hours: 9:30 AM–6:30 PM, 1–2 PM lunch excluded).';
     return;
   }
-  const due = addWorkingHours(new Date(), hours);
-  previewEl.innerHTML = `⏱ Assigned now + <strong>${hours}h</strong> of working time ⇒ employee's deadline will be around <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>. (The actual value locks in at the moment you click "Assign task".)`;
+  const hours = hoursRaw === '' ? null : Number(hoursRaw);
+  if (hours == null || Number.isNaN(hours) || hours <= 0) {
+    previewEl.innerHTML = `Starts <strong>${escapeHtml(fmtDate(dateRaw))}</strong> — add hours to see the calculated completion deadline.`;
+    return;
+  }
+  const due = addWorkingHours(dateRaw, hours);
+  previewEl.innerHTML = `⏱ With <strong>${hours}h</strong> of working time from <strong>${escapeHtml(fmtDate(dateRaw))}</strong>, this task is due by <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>.`;
 }
 document.getElementById('f-hours').addEventListener('input', updateTaskDeadlinePreview);
+document.getElementById('f-targetdate').addEventListener('input', updateTaskDeadlinePreview);
 updateTaskDeadlinePreview();
 
 els.addTaskForm.addEventListener('submit', async (e) => {
@@ -1540,12 +1517,9 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
 }
 
 function getDeadlineHtml(task, showAssignee) {
-  // return showAssignee
-  //   ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
-  //   : fmtCalculatedDeadline(task.target_date, task.hours_to_complete);
   return showAssignee
-  ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
-  : fmtCalculatedDeadline(task.created_at, task.hours_to_complete);   // ← target_date se cr
+    ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
+    : fmtCalculatedDeadline(task.target_date, task.hours_to_complete);
 }
 
 function verificationBadgeHtml(task) {
