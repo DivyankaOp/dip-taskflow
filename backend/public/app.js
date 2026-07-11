@@ -224,6 +224,7 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
   if (!isForm && body) headers['Content-Type'] = 'application/json';
   const res = await fetch(`${API_BASE}${path}`, {
     method, headers,
+    cache: 'no-store',
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
@@ -696,6 +697,34 @@ async function refreshEmployeeDropdowns() {
 }
 
 // ─── Add New Task ────────────────────────────────────────────────────────────
+
+// Live preview of the actual completion deadline while assigning a task —
+// reuses the same office-hours-aware calculator (9:30 AM–6:30 PM, 1–2 PM
+// lunch excluded, Sundays skipped) that's already used to show deadlines
+// everywhere else in the app, so what the admin sees here always matches
+// what employees/verifiers see later on the task itself.
+function updateTaskDeadlinePreview() {
+  const previewEl = document.getElementById('f-deadline-preview');
+  if (!previewEl) return;
+  const hoursRaw = document.getElementById('f-hours').value;
+  const dateRaw  = document.getElementById('f-targetdate').value;
+
+  if (!dateRaw) {
+    previewEl.innerHTML = 'Pick an hours value and a target date to see the calculated completion deadline (office hours: 9:30 AM–6:30 PM, 1–2 PM lunch excluded).';
+    return;
+  }
+  const hours = hoursRaw === '' ? null : Number(hoursRaw);
+  if (hours == null || Number.isNaN(hours) || hours <= 0) {
+    previewEl.innerHTML = `Starts <strong>${escapeHtml(fmtDate(dateRaw))}</strong> — add hours to see the calculated completion deadline.`;
+    return;
+  }
+  const due = addWorkingHours(dateRaw, hours);
+  previewEl.innerHTML = `⏱ With <strong>${hours}h</strong> of working time from <strong>${escapeHtml(fmtDate(dateRaw))}</strong>, this task is due by <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>.`;
+}
+document.getElementById('f-hours').addEventListener('input', updateTaskDeadlinePreview);
+document.getElementById('f-targetdate').addEventListener('input', updateTaskDeadlinePreview);
+updateTaskDeadlinePreview();
+
 els.addTaskForm.addEventListener('submit', async (e) => {
   e.preventDefault(); els.addTaskMsg.hidden = true;
   const formData = new FormData();
@@ -718,6 +747,7 @@ els.addTaskForm.addEventListener('submit', async (e) => {
     els.addTaskForm.reset();
     document.getElementById('f-priority').value = 'Medium';
     document.getElementById('f-reschedule').value = 'false';
+    updateTaskDeadlinePreview();
   } catch (err) {
     els.addTaskMsg.textContent = err.message; els.addTaskMsg.hidden = false;
   }
@@ -1656,6 +1686,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     } else {
       actionsEl.appendChild(makeActionBtn('action-start', '🔎 Start Verification', () => {
         activeVerifications.add(task.id);
+        persistActiveVerifications();
         startVerificationInline(task.id, actionsEl);
       }));
     }
@@ -1758,6 +1789,8 @@ async function verifyApprove(taskId) {
   try {
     await api(`/tasks/${taskId}/verify`, { method: 'PATCH', body: { approved: true } });
     showToast('Task verified ✅', 'success');
+    activeVerifications.delete(taskId);
+    persistActiveVerifications();
     loadVerifications();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -1836,13 +1869,30 @@ els.correctionForm.addEventListener('submit', async (e) => {
     });
     showToast('Correction sent ✅', 'success');
     els.correctionModal.hidden = true;
+    activeVerifications.delete(state.pendingTaskId);
+    persistActiveVerifications();
     loadVerifications();
   } catch (err) { els.correctionFormMsg.textContent = err.message; els.correctionFormMsg.hidden = false; }
 });
 
 // Tracks which task IDs have had "Start Verification" clicked this session.
 // Survives re-renders so the button doesn't reset when another task is actioned.
-const activeVerifications = new Set();
+// Also persisted to sessionStorage — a plain in-memory Set gets wiped on
+// every page refresh (the script re-runs from scratch), which used to make
+// the button jump back to "Start Verification" on reload even though the
+// task itself hadn't changed. sessionStorage keeps it until the tab closes.
+const ACTIVE_VERIFICATIONS_KEY = 'dip_active_verifications';
+function loadActiveVerifications() {
+  try {
+    const raw = sessionStorage.getItem(ACTIVE_VERIFICATIONS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (_) { return new Set(); }
+}
+function persistActiveVerifications() {
+  try { sessionStorage.setItem(ACTIVE_VERIFICATIONS_KEY, JSON.stringify([...activeVerifications])); }
+  catch (_) { /* sessionStorage unavailable — falls back to in-memory-only behaviour */ }
+}
+const activeVerifications = loadActiveVerifications();
 
 async function loadVerifications() {
   els.verificationsTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
@@ -2177,6 +2227,7 @@ function renderVerificationsTable(tbody, tasks) {
     } else {
       const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
         activeVerifications.add(task.id);
+        persistActiveVerifications();
         showVerifyActions();
       });
       tdActions.appendChild(startBtn);
@@ -2361,6 +2412,8 @@ document.getElementById('updationForm').addEventListener('submit', async (e) => 
     });
     showToast('Updation request sent ✅', 'success');
     document.getElementById('updationModal').hidden = true;
+    activeVerifications.delete(state.pendingTaskId);
+    persistActiveVerifications();
     loadVerifications();
   } catch (err) {
     msgEl.textContent = err.message;
