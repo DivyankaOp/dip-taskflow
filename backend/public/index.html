@@ -380,7 +380,7 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Name</th><th>Department</th><th>Designation</th>
+                    <th>Name</th><th>Department</th><th>Designation</th><th>Reporting Head</th>
                     <th>Role</th><th>Username</th><th>Status</th><th>Verifier</th><th>Actions</th>
                   </tr>
                 </thead>
@@ -389,6 +389,17 @@
             </div>
           </div>
           <div id="employeesCards" class="employee-card-list view-mobile-only" style="margin-top:20px"></div>
+        </section>
+
+        <!-- ORG HIERARCHY -->
+        <section id="view-hierarchy" class="view" hidden>
+          <div class="view-header-row">
+            <div class="view-heading" style="margin-bottom:0">
+              <h2 class="view-title">Org Hierarchy</h2>
+              <p class="view-sub">Reporting structure — inactive employees are hidden automatically.</p>
+            </div>
+          </div>
+          <div id="hierarchyTreeContainer" class="org-tree-container" style="margin-top:20px"></div>
         </section>
 
         <!-- MANAGE SITES -->
@@ -858,6 +869,12 @@
             <option value="admin">Admin</option>
           </select>
         </div>
+        <div class="field">
+          <label for="emp-reporting-head">Reporting Head <span class="optional">(optional)</span></label>
+          <select id="emp-reporting-head">
+            <option value="">— None (Top level) —</option>
+          </select>
+        </div>
         <p class="form-note">Username and password will be auto-generated after submission.</p>
         <p id="employeeFormMsg" class="form-error" hidden></p>
         <div class="modal-actions">
@@ -894,6 +911,12 @@
           <select id="edit-emp-role" required>
             <option value="employee">Employee</option>
             <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="edit-emp-reporting-head">Reporting Head <span class="optional">(optional)</span></label>
+          <select id="edit-emp-reporting-head">
+            <option value="">— None (Top level) —</option>
           </select>
         </div>
         <div class="field">
