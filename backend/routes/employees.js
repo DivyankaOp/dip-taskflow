@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, created_at')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, created_at, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
       .order('created_at', { ascending: true });
     if (error) throw error;
     res.json(data);
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
 // ----------------------------- add employee -----------------------------
 router.post('/', async (req, res) => {
   try {
-    const { full_name, department, designation, role } = req.body || {};
+    const { full_name, department, designation, role, reporting_head_id } = req.body || {};
 
     if (!full_name || !department || !designation || !role) {
       return res.status(400).json({ error: 'Please fill in all required fields' });
@@ -81,8 +81,11 @@ router.post('/', async (req, res) => {
 
     const { data, error } = await supabase
       .from('users')
-      .insert({ username, password_hash, full_name, department, designation, role, is_active: true })
-      .select('id, username, full_name, department, designation, role, is_active')
+      .insert({
+        username, password_hash, full_name, department, designation, role, is_active: true,
+        reporting_head_id: reporting_head_id || null // optional — left blank means "no reporting head / top level"
+      })
+      .select('id, username, full_name, department, designation, role, is_active, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
       .single();
 
     if (error) throw error;
@@ -100,7 +103,7 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee } = req.body || {};
+    const { full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, reporting_head_id } = req.body || {};
 
     const updates = {};
     if (full_name !== undefined) updates.full_name = full_name;
@@ -117,6 +120,14 @@ router.patch('/:id', async (req, res) => {
     if (is_mis_executive !== undefined) updates.is_mis_executive = is_mis_executive;
     if (can_add_site !== undefined) updates.can_add_site = can_add_site;
     if (can_add_employee !== undefined) updates.can_add_employee = can_add_employee;
+    // reporting_head_id is optional — '' / null clears it back to "no head / top level".
+    // Can't be your own reporting head — guard against that here too (frontend already excludes it).
+    if (reporting_head_id !== undefined) {
+      if (reporting_head_id && String(reporting_head_id) === String(id)) {
+        return res.status(400).json({ error: 'An employee cannot be their own reporting head' });
+      }
+      updates.reporting_head_id = reporting_head_id || null;
+    }
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'Nothing to update' });
@@ -126,7 +137,7 @@ router.patch('/:id', async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', id)
-      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
       .single();
 
     if (error) throw error;
