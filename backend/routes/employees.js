@@ -48,15 +48,34 @@ function generatePassword() {
   return pwd;
 }
 
+// Attaches `reporting_head: { id, full_name }` to one or more user rows via a
+// manual lookup, instead of an embedded Supabase FK-join (`users!fkey(...)`).
+// The embedded-join syntax depends on knowing the exact auto-generated FK
+// constraint name, which breaks silently ("Could not load employees") if it
+// doesn't match — same class of issue we hit before with sites.js, fixed the
+// same way there.
+async function attachReportingHead(rows) {
+  const list = Array.isArray(rows) ? rows : [rows];
+  const headIds = [...new Set(list.map(u => u.reporting_head_id).filter(Boolean))];
+  let headMap = {};
+  if (headIds.length) {
+    const { data: heads, error } = await supabase.from('users').select('id, full_name').in('id', headIds);
+    if (error) throw error;
+    (heads || []).forEach(h => { headMap[h.id] = h; });
+  }
+  const enriched = list.map(u => ({ ...u, reporting_head: headMap[u.reporting_head_id] || null }));
+  return Array.isArray(rows) ? enriched : enriched[0];
+}
+
 // ----------------------------- list employees -----------------------------
 router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, created_at, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, created_at, reporting_head_id')
       .order('created_at', { ascending: true });
     if (error) throw error;
-    res.json(data);
+    res.json(await attachReportingHead(data));
   } catch (err) {
     console.error('List employees error:', err.message);
     res.status(500).json({ error: 'Could not load employees' });
@@ -85,14 +104,15 @@ router.post('/', async (req, res) => {
         username, password_hash, full_name, department, designation, role, is_active: true,
         reporting_head_id: reporting_head_id || null // optional — left blank means "no reporting head / top level"
       })
-      .select('id, username, full_name, department, designation, role, is_active, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
+      .select('id, username, full_name, department, designation, role, is_active, reporting_head_id')
       .single();
 
     if (error) throw error;
+    const withHead = await attachReportingHead(data);
 
     // Plaintext password is only ever returned here, right after creation —
     // it is not retrievable again afterwards (only the hash is stored).
-    res.status(201).json({ ...data, generated_password: password });
+    res.status(201).json({ ...withHead, generated_password: password });
   } catch (err) {
     console.error('Add employee error:', err.message);
     res.status(500).json({ error: err.message || 'Could not add employee' });
@@ -137,11 +157,11 @@ router.patch('/:id', async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', id)
-      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, reporting_head_id, reporting_head:users!users_reporting_head_id_fkey ( id, full_name )')
+      .select('id, username, full_name, department, designation, role, is_active, can_verify, is_mis_executive, can_add_site, can_add_employee, reporting_head_id')
       .single();
 
     if (error) throw error;
-    res.json(data);
+    res.json(await attachReportingHead(data));
   } catch (err) {
     console.error('Update employee error:', err.message);
     res.status(500).json({ error: err.message || 'Could not update employee' });
