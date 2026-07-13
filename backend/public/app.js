@@ -45,6 +45,7 @@ const els = {
   employeeFormMsg: document.getElementById('employeeFormMsg'),
   closeEmployeeModal: document.getElementById('closeEmployeeModal'),
   cancelEmployeeModal: document.getElementById('cancelEmployeeModal'),
+  empReportingHead: document.getElementById('emp-reporting-head'),
   credsModal: document.getElementById('credsModal'),
   credsUsername: document.getElementById('credsUsername'),
   credsPassword: document.getElementById('credsPassword'),
@@ -61,8 +62,11 @@ const els = {
   editEmpDepartment: document.getElementById('edit-emp-department'),
   editEmpDesignation: document.getElementById('edit-emp-designation'),
   editEmpRole: document.getElementById('edit-emp-role'),
+  editEmpReportingHead: document.getElementById('edit-emp-reporting-head'),
   editEmpPassword: document.getElementById('edit-emp-password'),
   toggleEditPassword: document.getElementById('toggleEditPassword'),
+
+  hierarchyTreeContainer: document.getElementById('hierarchyTreeContainer'),
 
   permissionsTableBody: document.getElementById('permissionsTableBody'),
 
@@ -344,6 +348,18 @@ function fmtCalculatedDeadline(targetDateIso, hours) {
   const d = fmtDate(due.toISOString());
   return hours != null ? `${d} · ${hours}h` : d;
 }
+
+// ── "My Tasks" due date: Due Date = task's CREATED date + hours_to_complete ──
+// (office-hours aware, same working-time calculator as everywhere else, just
+// anchored to created_at instead of target_date — this is what the employee's
+// own My Tasks page shows, as opposed to the target-date-based deadline used
+// in admin/verification views elsewhere.)
+function fmtDueDateFromCreated(task) {
+  if (!task.created_at) return '—';
+  if (task.hours_to_complete == null) return fmtDate(task.created_at);
+  const due = addWorkingHours(task.created_at, task.hours_to_complete);
+  return `${fmtDate(due.toISOString())} · ${task.hours_to_complete}h`;
+}
 function toDatetimeLocalValue(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -471,6 +487,7 @@ function buildNav() {
     adminLabel.className = 'nav-section-label'; adminLabel.textContent = 'Administration';
     els.navList.appendChild(adminLabel);
     if (isAdmin || canAddEmployee) els.navList.appendChild(makeNavButton('employees', '👥 Manage employees'));
+    if (isAdmin) els.navList.appendChild(makeNavButton('hierarchy', '🌳 Org Hierarchy'));
     if (isAdmin || canAddSite)     els.navList.appendChild(makeNavButton('sites', '🏗️ Manage sites'));
     if (isAdmin) {
       els.navList.appendChild(makeNavButton('masterdata', '🗂️ Departments & task types'));
@@ -644,6 +661,7 @@ function switchView(viewKey) {
   if (viewKey === 'overdue')       loadOverdueTasks();
   if (viewKey === 'my')            loadMyTasks();
   if (viewKey === 'employees')     loadEmployees();
+  if (viewKey === 'hierarchy')     loadHierarchy();
   if (viewKey === 'sites')         loadSites();
   if (viewKey === 'masterdata')    loadMasterDataView();
   if (viewKey === 'permissions')   loadPermissions();
@@ -693,6 +711,9 @@ async function refreshEmployeeDropdowns() {
     fillSelect(els.siteCoordinator, employees, { placeholder: 'Select coordinator', labelKey: 'full_name' });
     fillSelect(els.siteIncharge, employees, { placeholder: 'Select site incharge', labelKey: 'full_name' });
     fillSelect(recEls.employee(), employees, { placeholder: 'Select Employee', labelKey: 'full_name' });
+    // Reporting Head — optional field on the employee form. Add form shows everyone;
+    // Edit form additionally excludes the employee being edited (can't report to self).
+    fillSelect(els.empReportingHead, employees, { placeholder: '— None (Top level) —', labelKey: 'full_name' });
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -1230,7 +1251,7 @@ async function loadMyTasks() {
 
     els.myTasksList.innerHTML = '';
     els.myTasksList.classList.add('task-list');
-    visibleTasks.forEach(t => els.myTasksList.appendChild(renderTaskCard(t, { showAssignee: false, allowActions: true })));
+    visibleTasks.forEach(t => els.myTasksList.appendChild(renderTaskCard(t, { showAssignee: false, allowActions: true, useCreatedDueDate: true })));
     recurringTasks.forEach(t => els.myTasksList.appendChild(buildEmployeeRecurringCard(t, loadMyTasks)));
     if (!visibleTasks.length && !recurringTasks.length) {
       els.myTasksList.innerHTML = `<div class="empty-state"><span class="emoji">📭</span>No tasks found</div>`;
@@ -1388,10 +1409,10 @@ function renderMyTasksTable(tbody, tasks, recurringTasks = []) {
     tdDetails.className = 'task-name-cell';
     tdDetails.innerHTML = buildTaskDetailsHtml(task, { showAssignee: false });
 
-    // Due date (calculated from target date + working hours, same as the card view)
+    // Due date (My Tasks rule: created date + hours_to_complete, office-hours aware)
     const tdDate = document.createElement('td');
     tdDate.style.wordBreak = 'break-word';
-    tdDate.textContent = getDeadlineHtml(task, false);
+    tdDate.textContent = fmtDueDateFromCreated(task);
 
     // Voice note
     const tdVoice = document.createElement('td');
@@ -1516,7 +1537,8 @@ function renderTaskList(container, tasks, { showAssignee, allowActions, verifica
   tasks.forEach((task) => container.appendChild(renderTaskCard(task, { showAssignee, allowActions, verificationMode })));
 }
 
-function getDeadlineHtml(task, showAssignee) {
+function getDeadlineHtml(task, showAssignee, useCreatedDate = false) {
+  if (useCreatedDate) return fmtDueDateFromCreated(task);
   return showAssignee
     ? fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)
     : fmtCalculatedDeadline(task.target_date, task.hours_to_complete);
@@ -1650,7 +1672,7 @@ function buildCardMenuElement(task, { showAssignee }) {
   return wrap;
 }
 
-function renderTaskCard(task, { showAssignee, allowActions, verificationMode = false }) {
+function renderTaskCard(task, { showAssignee, allowActions, verificationMode = false, useCreatedDueDate = false }) {
   const card = document.createElement('div');
   card.className = `task-card priority-${task.priority}`;
   const statusClass = task.status.replace(/\s/g, '');
@@ -1664,7 +1686,7 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
     </div>
     <p class="task-card-desc">${escapeHtml(task.description)}</p>
     <div class="task-meta">
-      <span>Due <strong>${getDeadlineHtml(task, showAssignee)}</strong></span>
+      <span>Due <strong>${getDeadlineHtml(task, showAssignee, useCreatedDueDate)}</strong></span>
       ${task.attachment_url ? `<a class="attachment-link" href="${task.attachment_url}" target="_blank" rel="noopener">📎 Attachment</a>` : ''}
       ${task.voice_note_url ? `<a class="attachment-link" href="${task.voice_note_url}" target="_blank" rel="noopener">🎤 Voice note</a>` : ''}
     </div>
@@ -2787,7 +2809,7 @@ els.rejectLeaveForm.addEventListener('submit', async (e) => {
 
 // ─── Manage Employees ─────────────────────────────────────────────────────────
 async function loadEmployees() {
-  els.employeesTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading employees…</td></tr>`;
+  els.employeesTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">Loading employees…</td></tr>`;
   els.employeesCards.innerHTML = `<div class="empty-state">Loading employees…</div>`;
   try {
     const employees = await api('/employees');
@@ -2798,7 +2820,7 @@ async function loadEmployees() {
 
 function renderEmployeesTable(employees) {
   if (!employees.length) {
-    els.employeesTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No employees yet</td></tr>`;
+    els.employeesTableBody.innerHTML = `<tr><td colspan="9" class="empty-state">No employees yet</td></tr>`;
     return;
   }
   els.employeesTableBody.innerHTML = '';
@@ -2808,25 +2830,26 @@ function renderEmployeesTable(employees) {
       <td><strong style="font-weight:600">${escapeHtml(emp.full_name)}</strong></td>
       <td>${escapeHtml(emp.department ?? '—')}</td>
       <td>${escapeHtml(emp.designation ?? '—')}</td>
+      <td>${escapeHtml(emp.reporting_head?.full_name ?? '—')}</td>
       <td><span class="role-pill ${emp.role}">${emp.role}</span></td>
       <td style="font-family:var(--font-mono);font-size:0.8rem">${escapeHtml(emp.username)}</td>
       <td></td><td></td><td class="row-actions"></td>
     `;
-    const statusCell = tr.children[5];
+    const statusCell = tr.children[6];
     const statusBtn = document.createElement('button');
     statusBtn.className = `status-toggle ${emp.is_active ? 'active' : 'inactive'}`;
     statusBtn.textContent = emp.is_active ? 'Active' : 'Inactive';
     statusBtn.addEventListener('click', () => toggleEmployeeStatus(emp));
     statusCell.appendChild(statusBtn);
 
-    const verifierCell = tr.children[6];
+    const verifierCell = tr.children[7];
     const verifierBtn = document.createElement('button');
     verifierBtn.className = `status-toggle ${emp.can_verify ? 'active' : 'inactive'}`;
     verifierBtn.textContent = emp.can_verify ? 'Yes' : 'No';
     verifierBtn.addEventListener('click', () => toggleEmployeeVerifier(emp));
     verifierCell.appendChild(verifierBtn);
 
-    const actionsCell = tr.children[7];
+    const actionsCell = tr.children[8];
     const editBtn = document.createElement('button');
     editBtn.className = 'action-btn action-start';
     editBtn.textContent = '✏️ Edit';
@@ -2864,6 +2887,10 @@ function renderEmployeesCards(employees) {
       <div class="employee-card-row">
         <span class="employee-card-label">Username</span>
         <span class="employee-card-value mono">${escapeHtml(emp.username)}</span>
+      </div>
+      <div class="employee-card-row">
+        <span class="employee-card-label">Reporting Head</span>
+        <span class="employee-card-value">${escapeHtml(emp.reporting_head?.full_name ?? '—')}</span>
       </div>
       <div class="employee-card-toggles"></div>
       <div class="employee-card-actions"></div>
@@ -2933,7 +2960,8 @@ els.employeeForm.addEventListener('submit', async (e) => {
     full_name:   document.getElementById('emp-fullname').value.trim(),
     department:  document.getElementById('emp-department').value.trim(),
     designation: document.getElementById('emp-designation').value.trim(),
-    role:        document.getElementById('emp-role').value
+    role:        document.getElementById('emp-role').value,
+    reporting_head_id: els.empReportingHead.value || null // optional
   };
   try {
     const created = await api('/employees', { method: 'POST', body });
@@ -2954,6 +2982,10 @@ function openEditEmployeeModal(emp) {
   els.editEmpDepartment.value = emp.department || '';
   els.editEmpDesignation.value = emp.designation || '';
   els.editEmpRole.value = emp.role || 'employee';
+  // Reporting Head — can't be your own reporting head, so exclude self from the list.
+  const headOptions = (state.master.employees || []).filter((e) => e.id !== emp.id);
+  fillSelect(els.editEmpReportingHead, headOptions, { placeholder: '— None (Top level) —', labelKey: 'full_name' });
+  els.editEmpReportingHead.value = emp.reporting_head_id || '';
   els.editEmpPassword.value = '';
   els.editEmployeeModal.hidden = false;
 }
@@ -2976,7 +3008,8 @@ els.editEmployeeForm.addEventListener('submit', async (e) => {
     full_name:   els.editEmpFullname.value.trim(),
     department:  els.editEmpDepartment.value.trim(),
     designation: els.editEmpDesignation.value.trim(),
-    role:        els.editEmpRole.value
+    role:        els.editEmpRole.value,
+    reporting_head_id: els.editEmpReportingHead.value || null // optional — blank clears it
   };
   if (newPassword) body.new_password = newPassword;
   try {
@@ -2986,6 +3019,77 @@ els.editEmployeeForm.addEventListener('submit', async (e) => {
     loadEmployees(); refreshEmployeeDropdowns();
   } catch (err) { els.editEmployeeFormMsg.textContent = err.message; els.editEmployeeFormMsg.hidden = false; }
 });
+
+// ─── Org Hierarchy (admin only) ────────────────────────────────────────────────
+// Root = whoever has no reporting_head_id (normally just Chirag Sir). Everyone
+// else nests under their reporting_head_id, however many levels deep. Inactive
+// employees are filtered out entirely before the tree is built, so deactivating
+// someone removes them (and, naturally, their own sub-tree moves up as orphans
+// — see buildOrgTree below) from the view immediately.
+async function loadHierarchy() {
+  els.hierarchyTreeContainer.innerHTML = `<div class="empty-state">Loading hierarchy…</div>`;
+  try {
+    const employees = await api('/employees'); // admin-only, includes is_active + reporting_head_id
+    const active = employees.filter((e) => e.is_active !== false);
+    renderOrgTree(active);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function buildOrgTree(employees) {
+  const byId = new Map(employees.map((e) => [e.id, { ...e, children: [] }]));
+  const roots = [];
+  byId.forEach((node) => {
+    const headId = node.reporting_head_id;
+    // No reporting head, OR reporting head isn't in the active set (e.g. was
+    // deactivated) — treat as a root so nobody silently disappears from the tree.
+    if (headId && byId.has(headId)) {
+      byId.get(headId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
+function orgInitials(name) {
+  return (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
+}
+
+function renderOrgNode(node, isRoot = false) {
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <div class="org-node ${isRoot ? 'org-node-root' : ''}">
+      <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
+      <div class="org-node-info">
+        <span class="org-node-name">${escapeHtml(node.full_name)}</span>
+        <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
+      </div>
+    </div>
+  `;
+  if (node.children && node.children.length) {
+    const ul = document.createElement('ul');
+    node.children
+      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+      .forEach((child) => ul.appendChild(renderOrgNode(child, false)));
+    li.appendChild(ul);
+  }
+  return li;
+}
+
+function renderOrgTree(employees) {
+  const roots = buildOrgTree(employees);
+  els.hierarchyTreeContainer.innerHTML = '';
+  if (!roots.length) {
+    els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
+    return;
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'org-tree';
+  roots
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+    .forEach((root) => ul.appendChild(renderOrgNode(root, true)));
+  els.hierarchyTreeContainer.appendChild(ul);
+}
 
 // ─── Permissions (admin only) ──────────────────────────────────────────────────
 async function loadPermissions() {
