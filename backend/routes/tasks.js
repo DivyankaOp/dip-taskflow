@@ -36,6 +36,7 @@ const TASK_SELECT = `
   rescheduling_possible, status, status_note, attachment_url, voice_note_url, created_at,
   accepted_at, rejected_at, sent_for_verification_at, verified_at,
   verification_status, verification_note, verification_attachment_urls,
+  verification_started_by, verification_started_at,
   correction_voice_url, updation_note,
   reschedule_status, reschedule_requested_date, reschedule_reason,
   reschedule_requested_at, reschedule_decided_at,
@@ -187,6 +188,60 @@ router.get('/verifications', async (req, res) => {
   } catch (err) {
     console.error('List verifications error:', err.message);
     res.status(500).json({ error: 'Could not load verification requests' });
+  }
+});
+
+// ----------------------------- start verification (the chosen verifier, or admin) -----------------------------
+// Records who clicked "Start Verification" and when, directly on the task
+// row. This used to be tracked only in the browser's sessionStorage, which
+// meant the "started" state could vanish (tab closed, different device,
+// storage cleared) and the button would appear to reset even though nothing
+// had actually changed. Storing it server-side makes it permanent — once
+// started, it stays started for that task, everywhere, for everyone.
+// Idempotent: calling it again just returns the task as-is (first click wins).
+router.patch('/:id/start-verification', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('id, verifier_id, verification_status, verification_started_by, verification_started_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const isChosenVerifier = existing.verifier_id === req.user.id;
+    if (!isChosenVerifier && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You are not the verifier for this task' });
+    }
+    if (existing.verification_status !== 'Pending Verification') {
+      return res.status(400).json({ error: 'This task is not awaiting verification' });
+    }
+
+    // Already started (by this verifier or another admin) — don't overwrite
+    // who/when, just hand back the current state.
+    if (existing.verification_started_at) {
+      const { data, error } = await supabase.from('tasks').select(TASK_SELECT).eq('id', id).single();
+      if (error) throw error;
+      return res.json(data);
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        verification_started_by: req.user.id,
+        verification_started_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(TASK_SELECT)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Start verification error:', err.message);
+    res.status(500).json({ error: err.message || 'Could not start verification' });
   }
 });
 
@@ -349,7 +404,10 @@ router.patch(
           verification_note: null,
           correction_voice_url: null,
           sent_for_verification_at: new Date().toISOString(),
-          verification_attachment_urls: verification_attachment_urls.length ? verification_attachment_urls : null
+          verification_attachment_urls: verification_attachment_urls.length ? verification_attachment_urls : null,
+          // fresh submission into the queue — clear any previous start-verification lock
+          verification_started_by: null,
+          verification_started_at: null
         })
         .eq('id', id)
         .select(TASK_SELECT)
