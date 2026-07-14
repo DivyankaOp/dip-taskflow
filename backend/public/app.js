@@ -3087,41 +3087,41 @@ function orgInitials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 }
 
-function renderOrgNode(node, isRoot = false) {
-  const li = document.createElement('li');
-  li.innerHTML = `
-    <div class="org-node ${isRoot ? 'org-node-root' : ''}">
-      <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
-      <div class="org-node-info">
-        <span class="org-node-name">${escapeHtml(node.full_name)}</span>
-        <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
-      </div>
-    </div>
-  `;
-  if (node.children && node.children.length) {
-    const ul = document.createElement('ul');
-    node.children
-      .sort((a, b) => a.full_name.localeCompare(b.full_name))
-      .forEach((child) => ul.appendChild(renderOrgNode(child, false)));
-    li.appendChild(ul);
-  }
-  return li;
-}
+// function renderOrgNode(node, isRoot = false) {
+//   const li = document.createElement('li');
+//   li.innerHTML = `
+//     <div class="org-node ${isRoot ? 'org-node-root' : ''}">
+//       <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
+//       <div class="org-node-info">
+//         <span class="org-node-name">${escapeHtml(node.full_name)}</span>
+//         <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
+//       </div>
+//     </div>
+//   `;
+//   if (node.children && node.children.length) {
+//     const ul = document.createElement('ul');
+//     node.children
+//       .sort((a, b) => a.full_name.localeCompare(b.full_name))
+//       .forEach((child) => ul.appendChild(renderOrgNode(child, false)));
+//     li.appendChild(ul);
+//   }
+//   return li;
+// }
 
-function renderOrgTree(employees) {
-  const roots = buildOrgTree(employees);
-  els.hierarchyTreeContainer.innerHTML = '';
-  if (!roots.length) {
-    els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
-    return;
-  }
-  const ul = document.createElement('ul');
-  ul.className = 'org-tree';
-  roots
-    .sort((a, b) => a.full_name.localeCompare(b.full_name))
-    .forEach((root) => ul.appendChild(renderOrgNode(root, true)));
-  els.hierarchyTreeContainer.appendChild(ul);
-}
+// function renderOrgTree(employees) {
+//   const roots = buildOrgTree(employees);
+//   els.hierarchyTreeContainer.innerHTML = '';
+//   if (!roots.length) {
+//     els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
+//     return;
+//   }
+//   const ul = document.createElement('ul');
+//   ul.className = 'org-tree';
+//   roots
+//     .sort((a, b) => a.full_name.localeCompare(b.full_name))
+//     .forEach((root) => ul.appendChild(renderOrgNode(root, true)));
+//   els.hierarchyTreeContainer.appendChild(ul);
+// }
 
 // ─── Permissions (admin only) ──────────────────────────────────────────────────
 async function loadPermissions() {
