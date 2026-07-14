@@ -920,6 +920,13 @@
           </select>
         </div>
         <div class="field">
+          <label>Status</label>
+          <div>
+            <button type="button" id="edit-emp-status-toggle" class="status-toggle active" data-active="true">Active</button>
+          </div>
+          <p class="form-note" style="margin-top:6px">Inactive employees are removed from the Org Hierarchy and from every "assign to / reporting head" dropdown.</p>
+        </div>
+        <div class="field">
           <label for="edit-emp-password">New password <span class="optional">(leave blank to keep current)</span></label>
           <div class="password-field">
             <input id="edit-emp-password" type="password" placeholder="Set a new password" minlength="6" autocomplete="new-password" />
