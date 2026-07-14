@@ -1264,42 +1264,35 @@ input,select,textarea,button { font-family: var(--font-body); font-size: 0.875re
 }
 
 /* ================================================================
-   ORG HIERARCHY TREE — top-down chart with right-angle connector lines
+   ORG HIERARCHY TREE — top-down chart. Layout is plain flexbox;
+   connector lines are drawn as an SVG overlay by JS (org-tree-svg),
+   positioned from each node's real measured coordinates — this is
+   deliberately NOT a CSS-pseudo-element line trick, because that
+   breaks the moment root trees have uneven heights or a row has a
+   different number of children (confirmed with real data).
    ================================================================ */
 .org-tree-container {
+  position: relative;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
   box-shadow: var(--sh-xs); padding: 40px 24px; overflow-x: auto;
 }
-.org-tree, .org-tree ul {
-  list-style: none; margin: 0; padding: 0;
-  display: flex; justify-content: center;
+.org-tree-svg {
+  position: absolute; top: 0; left: 0; z-index: 0;
+  pointer-events: none; overflow: visible;
 }
-.org-tree { gap: 48px; } /* space between independent root trees, if more than one */
-.org-tree ul { padding-top: 32px; position: relative; }
-.org-tree li {
+.org-tree-svg .org-line {
+  stroke: var(--primary); stroke-width: 2; stroke-linecap: round;
+}
+.org-tree {
+  position: relative; z-index: 1;
+  display: flex; align-items: flex-start; justify-content: center; gap: 56px;
+}
+.org-branch {
   display: flex; flex-direction: column; align-items: center;
-  position: relative; padding: 0 14px;
 }
-
-/* horizontal bar connecting siblings + vertical drop down to each node —
-   li::before draws the left half, li::after the right half + the drop line */
-.org-tree ul li::before, .org-tree ul li::after {
-  content: ''; position: absolute; top: 0; right: 50%;
-  width: 50%; height: 32px; border-top: 2px solid var(--primary-mid);
-}
-.org-tree ul li::after {
-  right: auto; left: 50%; border-left: 2px solid var(--primary-mid);
-}
-.org-tree ul li:only-child::before, .org-tree ul li:only-child::after { display: none; }
-.org-tree ul li:only-child { padding-top: 0; }
-.org-tree ul li:first-child::before, .org-tree ul li:last-child::after { border: 0 none; }
-.org-tree ul li:last-child::before { border-right: 2px solid var(--primary-mid); border-radius: 0 6px 0 0; }
-.org-tree ul li:first-child::after { border-radius: 6px 0 0 0; }
-
-/* short vertical stub from a parent node down to its children's horizontal bar */
-.org-tree ul::before {
-  content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 32px;
-  border-left: 2px solid var(--primary-mid); transform: translateX(-1px);
+.org-branch-children {
+  display: flex; align-items: flex-start; justify-content: center; gap: 28px;
+  margin-top: 40px;
 }
 
 .org-node {
