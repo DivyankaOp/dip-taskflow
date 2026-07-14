@@ -350,15 +350,18 @@ function fmtCalculatedDeadline(targetDateIso, hours) {
   return hours != null ? `${d} · ${hours}h` : d;
 }
 
-// ── "My Tasks" due date: Due Date = task's CREATED date + hours_to_complete ──
-// (office-hours aware, same working-time calculator as everywhere else, just
-// anchored to created_at instead of target_date — this is what the employee's
-// own My Tasks page shows, as opposed to the target-date-based deadline used
-// in admin/verification views elsewhere.)
+// ── "My Tasks" due date: Due Date = task's target_date + hours_to_complete ──
+// (office-hours aware, same working-time calculator as everywhere else).
+// IMPORTANT: this must anchor to target_date, not created_at — target_date is
+// what changes when a reschedule request is approved (see tasks.js
+// /reschedule-request/approve), so anchoring here to created_at meant an
+// employee's own "My Tasks" due date never updated after an approved
+// reschedule, even though the admin's own views (which already used
+// target_date) showed the new date correctly.
 function fmtDueDateFromCreated(task) {
-  if (!task.created_at) return '—';
-  if (task.hours_to_complete == null) return fmtDate(task.created_at);
-  const due = addWorkingHours(task.created_at, task.hours_to_complete);
+  if (!task.target_date) return task.created_at ? fmtDate(task.created_at) : '—';
+  if (task.hours_to_complete == null) return fmtDate(task.target_date);
+  const due = addWorkingHours(task.target_date, task.hours_to_complete);
   return `${fmtDate(due.toISOString())} · ${task.hours_to_complete}h`;
 }
 function toDatetimeLocalValue(iso) {
@@ -732,7 +735,7 @@ function updateTaskDeadlinePreview() {
   const dateRaw  = document.getElementById('f-targetdate').value;
 
   if (!dateRaw) {
-    previewEl.innerHTML = 'Pick an hours value and a target date to see the calculated completion deadline (office hours: 9:30 AM–6:30 PM, 1–2 PM lunch excluded).';
+    previewEl.innerHTML = '';
     return;
   }
   const hours = hoursRaw === '' ? null : Number(hoursRaw);
@@ -1704,14 +1707,20 @@ function renderTaskCard(task, { showAssignee, allowActions, verificationMode = f
   }
   const actionsEl = card.querySelector('.task-actions');
   if (verificationMode) {
-    if (activeVerifications.has(task.id)) {
-      startVerificationInline(task.id, actionsEl); // already started before re-render
+    if (task.verification_started_at) {
+      startVerificationInline(task.id, actionsEl); // already started (recorded on the task itself)
     } else {
-      actionsEl.appendChild(makeActionBtn('action-start', '🔎 Start Verification', () => {
-        activeVerifications.add(task.id);
-        persistActiveVerifications();
-        startVerificationInline(task.id, actionsEl);
-      }));
+      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', async () => {
+        startBtn.disabled = true;
+        try {
+          await startVerification(task.id);
+          startVerificationInline(task.id, actionsEl);
+        } catch (err) {
+          startBtn.disabled = false;
+          showToast(err.message, 'error');
+        }
+      });
+      actionsEl.appendChild(startBtn);
     }
     return card;
   }
@@ -1812,8 +1821,6 @@ async function verifyApprove(taskId) {
   try {
     await api(`/tasks/${taskId}/verify`, { method: 'PATCH', body: { approved: true } });
     showToast('Task verified ✅', 'success');
-    activeVerifications.delete(taskId);
-    persistActiveVerifications();
     loadVerifications();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -1892,30 +1899,18 @@ els.correctionForm.addEventListener('submit', async (e) => {
     });
     showToast('Correction sent ✅', 'success');
     els.correctionModal.hidden = true;
-    activeVerifications.delete(state.pendingTaskId);
-    persistActiveVerifications();
     loadVerifications();
   } catch (err) { els.correctionFormMsg.textContent = err.message; els.correctionFormMsg.hidden = false; }
 });
 
-// Tracks which task IDs have had "Start Verification" clicked this session.
-// Survives re-renders so the button doesn't reset when another task is actioned.
-// Also persisted to sessionStorage — a plain in-memory Set gets wiped on
-// every page refresh (the script re-runs from scratch), which used to make
-// the button jump back to "Start Verification" on reload even though the
-// task itself hadn't changed. sessionStorage keeps it until the tab closes.
-const ACTIVE_VERIFICATIONS_KEY = 'dip_active_verifications';
-function loadActiveVerifications() {
-  try {
-    const raw = sessionStorage.getItem(ACTIVE_VERIFICATIONS_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch (_) { return new Set(); }
+// "Start Verification" state now lives on the task itself (verification_started_at /
+// verification_started_by, set via PATCH /tasks/:id/start-verification) instead of
+// browser storage. This is permanent — once started, it stays started for that
+// task everywhere (any tab, any device, any browser) until the task cycles back
+// through send-for-verification. See tasks.js for the server-side logic.
+async function startVerification(taskId) {
+  return api(`/tasks/${taskId}/start-verification`, { method: 'PATCH' });
 }
-function persistActiveVerifications() {
-  try { sessionStorage.setItem(ACTIVE_VERIFICATIONS_KEY, JSON.stringify([...activeVerifications])); }
-  catch (_) { /* sessionStorage unavailable — falls back to in-memory-only behaviour */ }
-}
-const activeVerifications = loadActiveVerifications();
 
 async function loadVerifications() {
   els.verificationsTableBody.innerHTML = `<tr><td colspan="8" class="empty-state">Loading…</td></tr>`;
@@ -2230,8 +2225,7 @@ function renderVerificationsTable(tbody, tasks) {
     tdDate.style.whiteSpace = 'nowrap';
     tdDate.textContent = fmtDate(task.verification_requested_at ?? task.updated_at ?? task.created_at);
 
-    // Actions — "Start Verification" → then Verify or Send for Correction
-    // activeVerifications Set ensures button stays in "started" state even after re-render
+    // Actions — Verify / Correction / Updation, shown directly (no gate)
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
 
@@ -2244,14 +2238,20 @@ function renderVerificationsTable(tbody, tasks) {
       tdActions.appendChild(makeActionBtn('action-updation', '📝 Updation', () => openUpdationModal(task.id)));
     }
 
-    if (activeVerifications.has(task.id)) {
-      // Already started before re-render — show verify/correction buttons directly
+    // Actions — "Start Verification" → then Verify or Send for Correction
+    if (task.verification_started_at) {
+      // Already started (recorded on the task itself) — show verify/correction buttons directly
       showVerifyActions();
     } else {
-      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', () => {
-        activeVerifications.add(task.id);
-        persistActiveVerifications();
-        showVerifyActions();
+      const startBtn = makeActionBtn('action-start', '🔎 Start Verification', async () => {
+        startBtn.disabled = true;
+        try {
+          await startVerification(task.id);
+          showVerifyActions();
+        } catch (err) {
+          startBtn.disabled = false;
+          showToast(err.message, 'error');
+        }
       });
       tdActions.appendChild(startBtn);
     }
@@ -2435,8 +2435,6 @@ document.getElementById('updationForm').addEventListener('submit', async (e) => 
     });
     showToast('Updation request sent ✅', 'success');
     document.getElementById('updationModal').hidden = true;
-    activeVerifications.delete(state.pendingTaskId);
-    persistActiveVerifications();
     loadVerifications();
   } catch (err) {
     msgEl.textContent = err.message;
