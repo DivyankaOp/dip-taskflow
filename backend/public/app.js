@@ -63,6 +63,7 @@ const els = {
   editEmpDesignation: document.getElementById('edit-emp-designation'),
   editEmpRole: document.getElementById('edit-emp-role'),
   editEmpReportingHead: document.getElementById('edit-emp-reporting-head'),
+  editEmpStatusToggle: document.getElementById('edit-emp-status-toggle'),
   editEmpPassword: document.getElementById('edit-emp-password'),
   toggleEditPassword: document.getElementById('toggleEditPassword'),
 
@@ -2986,9 +2987,19 @@ function openEditEmployeeModal(emp) {
   const headOptions = (state.master.employees || []).filter((e) => e.id !== emp.id);
   fillSelect(els.editEmpReportingHead, headOptions, { placeholder: '— None (Top level) —', labelKey: 'full_name' });
   els.editEmpReportingHead.value = emp.reporting_head_id || '';
+  setEditStatusToggle(emp.is_active !== false);
   els.editEmpPassword.value = '';
   els.editEmployeeModal.hidden = false;
 }
+// Reflects the given active/inactive state onto the toggle button's look + dataset.
+function setEditStatusToggle(isActive) {
+  els.editEmpStatusToggle.dataset.active = isActive ? 'true' : 'false';
+  els.editEmpStatusToggle.className = `status-toggle ${isActive ? 'active' : 'inactive'}`;
+  els.editEmpStatusToggle.textContent = isActive ? 'Active' : 'Inactive';
+}
+els.editEmpStatusToggle.addEventListener('click', () => {
+  setEditStatusToggle(els.editEmpStatusToggle.dataset.active !== 'true');
+});
 els.closeEditEmployeeModal.addEventListener('click', () => { els.editEmployeeModal.hidden = true; });
 els.cancelEditEmployeeModal.addEventListener('click', () => { els.editEmployeeModal.hidden = true; });
 els.toggleEditPassword.addEventListener('click', () => {
@@ -3009,7 +3020,8 @@ els.editEmployeeForm.addEventListener('submit', async (e) => {
     department:  els.editEmpDepartment.value.trim(),
     designation: els.editEmpDesignation.value.trim(),
     role:        els.editEmpRole.value,
-    reporting_head_id: els.editEmpReportingHead.value || null // optional — blank clears it
+    reporting_head_id: els.editEmpReportingHead.value || null, // optional — blank clears it
+    is_active:   els.editEmpStatusToggle.dataset.active === 'true'
   };
   if (newPassword) body.new_password = newPassword;
   try {
