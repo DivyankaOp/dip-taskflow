@@ -3086,43 +3086,100 @@ function buildOrgTree(employees) {
 function orgInitials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 }
+function renderOrgNode(node, isRoot = false) {
+  const branch = document.createElement('div');
+  branch.className = 'org-branch';
 
-// function renderOrgNode(node, isRoot = false) {
-//   const li = document.createElement('li');
-//   li.innerHTML = `
-//     <div class="org-node ${isRoot ? 'org-node-root' : ''}">
-//       <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
-//       <div class="org-node-info">
-//         <span class="org-node-name">${escapeHtml(node.full_name)}</span>
-//         <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
-//       </div>
-//     </div>
-//   `;
-//   if (node.children && node.children.length) {
-//     const ul = document.createElement('ul');
-//     node.children
-//       .sort((a, b) => a.full_name.localeCompare(b.full_name))
-//       .forEach((child) => ul.appendChild(renderOrgNode(child, false)));
-//     li.appendChild(ul);
-//   }
-//   return li;
-// }
+  const nodeEl = document.createElement('div');
+  nodeEl.className = `org-node${isRoot ? ' org-node-root' : ''}`;
+  nodeEl.innerHTML = `
+    <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
+    <div class="org-node-info">
+      <span class="org-node-name">${escapeHtml(node.full_name)}</span>
+      <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
+    </div>
+  `;
+  branch.appendChild(nodeEl);
 
-// function renderOrgTree(employees) {
-//   const roots = buildOrgTree(employees);
-//   els.hierarchyTreeContainer.innerHTML = '';
-//   if (!roots.length) {
-//     els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
-//     return;
-//   }
-//   const ul = document.createElement('ul');
-//   ul.className = 'org-tree';
-//   roots
-//     .sort((a, b) => a.full_name.localeCompare(b.full_name))
-//     .forEach((root) => ul.appendChild(renderOrgNode(root, true)));
-//   els.hierarchyTreeContainer.appendChild(ul);
-// }
+  if (node.children && node.children.length) {
+    const childrenWrap = document.createElement('div');
+    childrenWrap.className = 'org-branch-children';
+    node.children
+      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+      .forEach((child) => childrenWrap.appendChild(renderOrgNode(child, false)));
+    branch.appendChild(childrenWrap);
+  }
+  return branch;
+}
 
+function renderOrgTree(employees) {
+  const roots = buildOrgTree(employees);
+  els.hierarchyTreeContainer.innerHTML = '';
+  if (!roots.length) {
+    els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
+    return;
+  }
+  const treeEl = document.createElement('div');
+  treeEl.className = 'org-tree';
+  roots
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+    .forEach((root) => treeEl.appendChild(renderOrgNode(root, true)));
+  els.hierarchyTreeContainer.appendChild(treeEl);
+
+  requestAnimationFrame(() => drawOrgTreeLines(treeEl));
+}
+
+function drawOrgTreeLines(treeEl) {
+  const existing = els.hierarchyTreeContainer.querySelector('.org-tree-svg');
+  if (existing) existing.remove();
+
+  const containerRect = els.hierarchyTreeContainer.getBoundingClientRect();
+  const scrollX = els.hierarchyTreeContainer.scrollLeft;
+  const scrollY = els.hierarchyTreeContainer.scrollTop;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'org-tree-svg');
+  svg.setAttribute('width', els.hierarchyTreeContainer.scrollWidth);
+  svg.setAttribute('height', els.hierarchyTreeContainer.scrollHeight);
+
+  treeEl.querySelectorAll('.org-branch').forEach((branch) => {
+    const parentNode = branch.querySelector(':scope > .org-node');
+    const childrenWrap = branch.querySelector(':scope > .org-branch-children');
+    if (!parentNode || !childrenWrap) return;
+
+    const pRect = parentNode.getBoundingClientRect();
+    const px = pRect.left + pRect.width / 2 - containerRect.left + scrollX;
+    const py = pRect.bottom - containerRect.top + scrollY;
+    const childrenTop = childrenWrap.getBoundingClientRect().top - containerRect.top + scrollY;
+    const midY = py + (childrenTop - py) / 2;
+
+    Array.from(childrenWrap.children).forEach((childBranch) => {
+      const childNode = childBranch.querySelector(':scope > .org-node');
+      if (!childNode) return;
+      const cRect = childNode.getBoundingClientRect();
+      const cx = cRect.left + cRect.width / 2 - containerRect.left + scrollX;
+      const cy = cRect.top - containerRect.top + scrollY;
+
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('class', 'org-line');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('d', `M ${px} ${py} V ${midY} H ${cx} V ${cy}`);
+      svg.appendChild(path);
+    });
+  });
+
+  els.hierarchyTreeContainer.insertBefore(svg, treeEl);
+}
+
+let orgTreeResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (state.activeView !== 'hierarchy') return;
+  clearTimeout(orgTreeResizeTimer);
+  orgTreeResizeTimer = setTimeout(() => {
+    const treeEl = els.hierarchyTreeContainer.querySelector('.org-tree');
+    if (treeEl) drawOrgTreeLines(treeEl);
+  }, 150);
+});
 // ─── Permissions (admin only) ──────────────────────────────────────────────────
 async function loadPermissions() {
   els.permissionsTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">Loading employees…</td></tr>`;
