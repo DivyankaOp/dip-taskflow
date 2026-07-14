@@ -257,11 +257,6 @@ function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'n
   }
 }
 
-function debounce(fn, wait) {
-  let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
-}
-
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString(undefined, {
@@ -3072,30 +3067,25 @@ function orgInitials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 }
 
-function renderOrgBranch(node, isRoot = false) {
-  const branch = document.createElement('div');
-  branch.className = 'org-branch';
-
-  const nodeDiv = document.createElement('div');
-  nodeDiv.className = `org-node ${isRoot ? 'org-node-root' : ''}`;
-  nodeDiv.innerHTML = `
-    <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
-    <div class="org-node-info">
-      <span class="org-node-name">${escapeHtml(node.full_name)}</span>
-      <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
+function renderOrgNode(node, isRoot = false) {
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <div class="org-node ${isRoot ? 'org-node-root' : ''}">
+      <div class="org-node-avatar">${escapeHtml(orgInitials(node.full_name))}</div>
+      <div class="org-node-info">
+        <span class="org-node-name">${escapeHtml(node.full_name)}</span>
+        <span class="org-node-meta">${escapeHtml(node.designation || node.role)}</span>
+      </div>
     </div>
   `;
-  branch.appendChild(nodeDiv);
-
   if (node.children && node.children.length) {
-    const childrenWrap = document.createElement('div');
-    childrenWrap.className = 'org-branch-children';
+    const ul = document.createElement('ul');
     node.children
       .sort((a, b) => a.full_name.localeCompare(b.full_name))
-      .forEach((child) => childrenWrap.appendChild(renderOrgBranch(child, false)));
-    branch.appendChild(childrenWrap);
+      .forEach((child) => ul.appendChild(renderOrgNode(child, false)));
+    li.appendChild(ul);
   }
-  return branch;
+  return li;
 }
 
 function renderOrgTree(employees) {
@@ -3105,70 +3095,12 @@ function renderOrgTree(employees) {
     els.hierarchyTreeContainer.innerHTML = `<div class="org-tree-empty">No active employees to show yet.</div>`;
     return;
   }
-
-  const wrap = document.createElement('div');
-  wrap.className = 'org-tree';
+  const ul = document.createElement('ul');
+  ul.className = 'org-tree';
   roots
     .sort((a, b) => a.full_name.localeCompare(b.full_name))
-    .forEach((root) => wrap.appendChild(renderOrgBranch(root, true)));
-  els.hierarchyTreeContainer.appendChild(wrap);
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'org-tree-svg');
-  els.hierarchyTreeContainer.appendChild(svg);
-
-  // Connector lines are measured from real, rendered node positions (not
-  // guessed via CSS) — accurate regardless of how many children/levels there
-  // are, or how uneven the different root trees' heights are.
-  const redraw = () => drawOrgConnectors(els.hierarchyTreeContainer, svg);
-  requestAnimationFrame(redraw);
-  if (state.orgTreeResizeHandler) window.removeEventListener('resize', state.orgTreeResizeHandler);
-  state.orgTreeResizeHandler = debounce(redraw, 150);
-  window.addEventListener('resize', state.orgTreeResizeHandler);
-}
-
-function drawOrgConnectors(container, svg) {
-  const containerRect = container.getBoundingClientRect();
-  const scrollW = container.scrollWidth;
-  const scrollH = container.scrollHeight;
-  svg.setAttribute('width', scrollW);
-  svg.setAttribute('height', scrollH);
-  svg.setAttribute('viewBox', `0 0 ${scrollW} ${scrollH}`);
-  svg.innerHTML = '';
-
-  const point = (el) => {
-    const r = el.getBoundingClientRect();
-    return {
-      top: { x: r.left + r.width / 2 - containerRect.left + container.scrollLeft, y: r.top - containerRect.top + container.scrollTop },
-      bottom: { x: r.left + r.width / 2 - containerRect.left + container.scrollLeft, y: r.bottom - containerRect.top + container.scrollTop }
-    };
-  };
-  const line = (x1, y1, x2, y2) => {
-    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    l.setAttribute('class', 'org-line');
-    l.setAttribute('x1', x1); l.setAttribute('y1', y1);
-    l.setAttribute('x2', x2); l.setAttribute('y2', y2);
-    svg.appendChild(l);
-  };
-
-  container.querySelectorAll('.org-branch').forEach((branch) => {
-    const nodeDiv = branch.querySelector(':scope > .org-node');
-    const childrenWrap = branch.querySelector(':scope > .org-branch-children');
-    if (!nodeDiv || !childrenWrap) return;
-
-    const parentPt = point(nodeDiv).bottom;
-    const childPts = Array.from(childrenWrap.querySelectorAll(':scope > .org-branch > .org-node')).map((n) => point(n).top);
-    if (!childPts.length) return;
-
-    const busY = parentPt.y + 20; // horizontal bus sits halfway down the gap between rows
-    line(parentPt.x, parentPt.y, parentPt.x, busY); // parent down to bus
-
-    if (childPts.length > 1) {
-      const xs = childPts.map((p) => p.x);
-      line(Math.min(...xs), busY, Math.max(...xs), busY); // bus spans first↔last child
-    }
-    childPts.forEach((p) => line(p.x, busY, p.x, p.y)); // bus down to each child
-  });
+    .forEach((root) => ul.appendChild(renderOrgNode(root, true)));
+  els.hierarchyTreeContainer.appendChild(ul);
 }
 
 // ─── Permissions (admin only) ──────────────────────────────────────────────────
