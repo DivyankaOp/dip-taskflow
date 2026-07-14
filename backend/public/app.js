@@ -257,20 +257,42 @@ function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'n
   }
 }
 
+// JS parses a bare "YYYY-MM-DD" string (no time, no offset) as UTC midnight
+// per the ISO-8601 spec — but a full timestamp like "...T10:15:00" (no
+// timezone) is parsed as LOCAL time. target_date started life as a
+// date-only field, so every plain date silently shifted by the browser's
+// UTC offset once displayed (India = UTC+5:30, so midnight UTC → 5:30 AM
+// IST — that's where the mystery "5:30 AM" was coming from, and why a
+// date-only target_date and a reschedule's date+time target_date could
+// disagree by hours even though both were "the same day"). This parses
+// date-only strings as LOCAL midnight instead, so there's no shift.
+function parseLocalDate(iso) {
+  if (!iso) return null;
+  if (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d); // local midnight — no UTC shift
+  }
+  return new Date(iso);
+}
+
 function fmtDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, {
+  return parseLocalDate(iso).toLocaleString(undefined, {
     day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'
   });
 }
 function fmtDateOnly(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
+  return parseLocalDate(iso).toLocaleDateString(undefined, {
     day: '2-digit', month: 'short', year: 'numeric'
   });
 }
+// Admin-facing deadline: ONLY the target date, no time. The employee-facing
+// calculated deadline (fmtCalculatedDeadline / fmtDueDateFromCreated below)
+// is the one that shows an actual time, since that's the real computed
+// due-by moment; the raw target_date has no meaningful time of its own.
 function fmtDeadlineDateOnlyWithHours(iso, hours) {
-  const d = fmtDate(iso); // full date + time, not just the date, so it's unambiguous
+  const d = fmtDateOnly(iso);
   return hours != null ? `${d} · ${hours}h` : d;
 }
 
@@ -323,7 +345,7 @@ function snapToWorkingMoment(date) {
 // a starting datetime and returns the resulting Date.
 function addWorkingHours(startDate, hours) {
   let remainingMs = (Number(hours) || 0) * 3600000;
-  let current = snapToWorkingMoment(new Date(startDate));
+  let current = snapToWorkingMoment(parseLocalDate(startDate));
   if (remainingMs <= 0) return current;
 
   for (let guard = 0; guard < 1000 && remainingMs > 0; guard++) {
@@ -611,7 +633,7 @@ async function refreshNavBadges() {
         if (!t.target_date) return false;
         if (t.status === 'Completed' || t.status === 'Rejected') return false;
         if (t.verification_status === 'Verified') return false;
-        return new Date(t.target_date) < now;
+        return parseLocalDate(t.target_date) < now;
       }).length;
 
       const recurringAll = await api('/recurring-tasks/all').catch(() => []);
@@ -740,11 +762,11 @@ function updateTaskDeadlinePreview() {
   }
   const hours = hoursRaw === '' ? null : Number(hoursRaw);
   if (hours == null || Number.isNaN(hours) || hours <= 0) {
-    previewEl.innerHTML = `Starts <strong>${escapeHtml(fmtDate(dateRaw))}</strong> — add hours to see the calculated completion deadline.`;
+    previewEl.innerHTML = `Starts <strong>${escapeHtml(fmtDateOnly(dateRaw))}</strong> — add hours to see the calculated completion deadline.`;
     return;
   }
   const due = addWorkingHours(dateRaw, hours);
-  previewEl.innerHTML = `⏱ With <strong>${hours}h</strong> of working time from <strong>${escapeHtml(fmtDate(dateRaw))}</strong>, this task is due by <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>.`;
+  previewEl.innerHTML = `⏱ With <strong>${hours}h</strong> of working time starting <strong>${escapeHtml(fmtDateOnly(dateRaw))}</strong>, this task is due by <strong>${escapeHtml(fmtDate(due.toISOString()))}</strong>.`;
 }
 document.getElementById('f-hours').addEventListener('input', updateTaskDeadlinePreview);
 document.getElementById('f-targetdate').addEventListener('input', updateTaskDeadlinePreview);
@@ -955,8 +977,8 @@ async function loadOverdueTasks() {
       if (!t.target_date) return false;
       if (t.status === 'Completed' || t.status === 'Rejected') return false;
       if (t.verification_status === 'Verified') return false;
-      return new Date(t.target_date) < now;
-    }).sort((a, b) => new Date(a.target_date) - new Date(b.target_date));
+      return parseLocalDate(t.target_date) < now;
+    }).sort((a, b) => parseLocalDate(a.target_date) - parseLocalDate(b.target_date));
 
     overdueTasksCache = overdue;
     renderOverdueTasksTable(els.overdueTasksList, overdue);
@@ -1062,7 +1084,7 @@ function renderOverdueTasksTable(tbody, tasks) {
     // Planned date (how overdue, shown in red) + extension note if active
     const tdDate = document.createElement('td');
     tdDate.style.wordBreak = 'break-word';
-    const daysOverdue = Math.floor((new Date() - new Date(task.target_date)) / 86400000);
+    const daysOverdue = Math.floor((new Date() - parseLocalDate(task.target_date)) / 86400000);
     tdDate.innerHTML = `
       <div>${fmtDeadlineDateOnlyWithHours(task.target_date, task.hours_to_complete)}</div>
       <div style="color:#d33;font-size:0.8rem;font-weight:600">${daysOverdue <= 0 ? 'Overdue today' : `${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue 🔴`}</div>
@@ -4235,7 +4257,7 @@ async function generateDailyReport() {
 
     allTasks.forEach(t => {
       const isDone  = t.status === 'Completed' || t.verification_status === 'Verified';
-      const targetD = t.target_date ? new Date(t.target_date) : null;
+      const targetD = t.target_date ? parseLocalDate(t.target_date) : null;
       if (targetD) targetD.setHours(0,0,0,0);
 
       if (isDone) { doneTasks.push(t); return; }
@@ -4419,7 +4441,7 @@ async function _generateDailyReportForRange(fromStr, toStr, body, dlBtn, subtitl
     const dateList = [];
     allTasks.forEach(t => {
       if (!t.target_date) return;
-      const d = new Date(t.target_date); d.setHours(0,0,0,0);
+      const d = parseLocalDate(t.target_date); d.setHours(0,0,0,0);
       if (d < from || d > to) return;
       const key = d.toISOString().slice(0,10);
       if (!byDate[key]) { byDate[key] = []; dateList.push(key); }
@@ -4445,9 +4467,9 @@ async function _generateDailyReportForRange(fromStr, toStr, body, dlBtn, subtitl
     }
 
     // Summary cards across range
-    const done    = allTasks.filter(t => { if (!t.target_date) return false; const d = new Date(t.target_date); return d >= from && d <= to && (t.status === 'Completed' || t.verification_status === 'Verified'); }).length;
-    const overdue = allTasks.filter(t => { if (!t.target_date) return false; const d = new Date(t.target_date); return d >= from && d <= to && d < new Date() && t.status !== 'Completed' && t.status !== 'Rejected' && t.verification_status !== 'Verified'; }).length;
-    const verif   = allTasks.filter(t => { if (!t.target_date) return false; const d = new Date(t.target_date); return d >= from && d <= to && t.verification_status === 'Pending Verification'; }).length;
+    const done    = allTasks.filter(t => { if (!t.target_date) return false; const d = parseLocalDate(t.target_date); return d >= from && d <= to && (t.status === 'Completed' || t.verification_status === 'Verified'); }).length;
+    const overdue = allTasks.filter(t => { if (!t.target_date) return false; const d = parseLocalDate(t.target_date); return d >= from && d <= to && d < new Date() && t.status !== 'Completed' && t.status !== 'Rejected' && t.verification_status !== 'Verified'; }).length;
+    const verif   = allTasks.filter(t => { if (!t.target_date) return false; const d = parseLocalDate(t.target_date); return d >= from && d <= to && t.verification_status === 'Pending Verification'; }).length;
     const total   = Object.values(byDate).flat().length;
 
     // body.insertAdjacentHTML('beforeend', `
@@ -4468,7 +4490,7 @@ async function _generateDailyReportForRange(fromStr, toStr, body, dlBtn, subtitl
       const enriched = tasks.map(t => {
         const isDone   = t.status === 'Completed' || t.verification_status === 'Verified';
         const isVerify = t.verification_status === 'Pending Verification';
-        const tgt      = new Date(t.target_date);
+        const tgt      = parseLocalDate(t.target_date);
         const daysLate = isDone ? 0 : Math.max(0, Math.floor((now - tgt) / 86400000));
         return { ...t, _section: isDone ? 'done' : isVerify ? 'verification' : daysLate > 0 ? 'overdue' : 'pending', _daysLate: daysLate };
       });
