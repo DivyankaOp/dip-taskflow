@@ -247,12 +247,23 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
     localStorage.setItem('tf_token', newToken);
   }
 
-  if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
-  const data = await res.json().catch(() => ({}));
+//   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
+//   const data = await res.json().catch(() => ({}));
+//   if (!res.ok) throw new Error(data.error || 'Something went wrong');
+//   return data;
+// }
+const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    // Login attempt ke liye backend ka asli message dikhao (e.g. "Invalid
+    // username or password"), auto-logout na karo — abhi to login hi nahi hue.
+    if (path === '/auth/login') {
+      throw new Error(data.error || 'Invalid username or password');
+    }
+    logout();
+    throw new Error('Session expired, please log in again');
+  }
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
-}
-
 function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
