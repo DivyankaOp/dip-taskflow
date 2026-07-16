@@ -264,6 +264,7 @@ const data = await res.json().catch(() => ({}));
   }
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
+}
 function fillSelect(select, items, { placeholder, valueKey = 'id', labelKey = 'name', extraOption } = {}) {
   select.innerHTML = '';
   if (placeholder) {
