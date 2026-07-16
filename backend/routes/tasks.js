@@ -208,9 +208,9 @@ router.patch('/:id/start-verification', async (req, res) => {
     //   .select('id, verifier_id, verification_status, verification_started_by, verification_started_at')
     //   .eq('id', id)
     //   .maybeSingle();
-    const { data: existing, error: fetchErr } = await supabase
+   const { data: existing, error: fetchErr } = await supabase
       .from('tasks')
-      .select('id, assigned_to, accepted_at')
+      .select('id, verifier_id, verification_status, verification_started_by, verification_started_at')
       .eq('id', id)
       .maybeSingle();
     if (fetchErr) throw fetchErr;
