@@ -128,14 +128,29 @@ router.post(
 );
 
 // ----------------------------- all delegated tasks (admin only, reference view) -----------------------------
+// router.get('/all', requireAdmin, async (req, res) => {
+//   try {
+//     let query = supabase.from('tasks').select(TASK_SELECT).order('target_date', { ascending: true });
+
+//     if (req.query.department_id) query = query.eq('department_id', req.query.department_id);
+//     if (req.query.employee_id) query = query.eq('assigned_to', req.query.employee_id);
+//     if (req.query.status) query = query.eq('status', req.query.status);
 router.get('/all', requireAdmin, async (req, res) => {
   try {
     let query = supabase.from('tasks').select(TASK_SELECT).order('target_date', { ascending: true });
 
-    if (req.query.department_id) query = query.eq('department_id', req.query.department_id);
+    // Sirf MDO OFFICE ke admin (top-level) ko sab departments ka data dikhta
+    // hai. Baaki har department ka admin (jaise Engg. Division ka head)
+    // sirf apne hi department ke tasks dekh sakta hai — chahe URL me
+    // koi bhi department_id filter na bhi bheja ho.
+    if (req.user.department !== 'MDO OFFICE') {
+      query = query.eq('department_id', req.user.department_id);
+    } else if (req.query.department_id) {
+      query = query.eq('department_id', req.query.department_id);
+    }
+
     if (req.query.employee_id) query = query.eq('assigned_to', req.query.employee_id);
     if (req.query.status) query = query.eq('status', req.query.status);
-
     const { data, error } = await query;
     if (error) throw error;
     res.json(data);
@@ -166,6 +181,21 @@ router.get('/my', async (req, res) => {
 });
 
 // ----------------------------- verification queue (for verifiers/admin) -----------------------------
+// router.get('/verifications', async (req, res) => {
+//   try {
+//     let query = supabase
+//       .from('tasks')
+//       .select(TASK_SELECT)
+//       .eq('verification_status', 'Pending Verification')
+//       .order('target_date', { ascending: true });
+
+//     // Admins have global oversight — they can verify any task, so they see
+//     // every pending verification request, not just ones where they were
+//     // specifically picked as the verifier. Everyone else only sees the ones
+//     // routed to them.
+//     if (req.user.role !== 'admin') {
+//       query = query.eq('verifier_id', req.user.id);
+//     }
 router.get('/verifications', async (req, res) => {
   try {
     let query = supabase
@@ -174,14 +204,18 @@ router.get('/verifications', async (req, res) => {
       .eq('verification_status', 'Pending Verification')
       .order('target_date', { ascending: true });
 
-    // Admins have global oversight — they can verify any task, so they see
-    // every pending verification request, not just ones where they were
-    // specifically picked as the verifier. Everyone else only sees the ones
-    // routed to them.
-    if (req.user.role !== 'admin') {
+    // MDO OFFICE admins have global oversight — they see every pending
+    // verification request, not just ones where they were specifically
+    // picked as the verifier. A department-level admin (e.g. Engg. Division
+    // head) only sees requests from within their own department. Everyone
+    // else (non-admin) only sees the ones routed to them personally.
+    if (req.user.role === 'admin' && req.user.department === 'MDO OFFICE') {
+      // no filter — sees everything
+    } else if (req.user.role === 'admin') {
+      query = query.eq('department_id', req.user.department_id);
+    } else {
       query = query.eq('verifier_id', req.user.id);
     }
-
     const { data, error } = await query;
     if (error) throw error;
     res.json(data);
