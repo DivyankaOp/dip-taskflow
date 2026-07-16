@@ -370,9 +370,28 @@ function snapToWorkingMoment(date) {
 
 // Adds `hours` of working time (office hours, minus lunch, Mon–Sat only) to
 // a starting datetime and returns the resulting Date.
+// function addWorkingHours(startDate, hours) {
+//   let remainingMs = (Number(hours) || 0) * 3600000;
+//   let current = snapToWorkingMoment(parseLocalDate(startDate));
+//   if (remainingMs <= 0) return current;
 function addWorkingHours(startDate, hours) {
   let remainingMs = (Number(hours) || 0) * 3600000;
   let current = snapToWorkingMoment(parseLocalDate(startDate));
+
+  // Agar target date AAJ ka din hai aur abhi ka actual time us din ke
+  // business-start (9:30 AM) se aage nikal chuka hai, to 9:30 AM se ginna
+  // shuru mat karo — warna deadline banate hi past mein dikhega. Isi din
+  // "abhi" se ginti shuru karo. Future target dates is se untouched rehte
+  // hain (unka 9:30 AM abhi se aage hi hoga, to Math.max khud sambhal lega).
+  const now = snapToWorkingMoment(new Date());
+  const targetDay = parseLocalDate(startDate);
+  const isSameCalendarDay = targetDay.getFullYear() === new Date().getFullYear()
+    && targetDay.getMonth() === new Date().getMonth()
+    && targetDay.getDate() === new Date().getDate();
+  if (isSameCalendarDay && now > current) {
+    current = now;
+  }
+
   if (remainingMs <= 0) return current;
 
   for (let guard = 0; guard < 1000 && remainingMs > 0; guard++) {
