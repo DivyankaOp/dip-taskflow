@@ -135,15 +135,18 @@ router.post(
 //     if (req.query.department_id) query = query.eq('department_id', req.query.department_id);
 //     if (req.query.employee_id) query = query.eq('assigned_to', req.query.employee_id);
 //     if (req.query.status) query = query.eq('status', req.query.status);
+// ----------------------------- all delegated tasks (admin only) -----------------------------
 router.get('/all', requireAdmin, async (req, res) => {
   try {
     let query = supabase.from('tasks').select(TASK_SELECT).order('target_date', { ascending: true });
 
     // Sirf MDO OFFICE ke admin (top-level) ko sab departments ka data dikhta
     // hai. Baaki har department ka admin (jaise Engg. Division ka head)
-    // sirf apne hi department ke tasks dekh sakta hai — chahe URL me
-    // koi bhi department_id filter na bhi bheja ho.
+    // sirf apne hi department ke tasks dekh sakta hai.
     if (req.user.department !== 'MDO OFFICE') {
+      if (!req.user.department_id) {
+        return res.json([]);
+      }
       query = query.eq('department_id', req.user.department_id);
     } else if (req.query.department_id) {
       query = query.eq('department_id', req.query.department_id);
@@ -151,6 +154,7 @@ router.get('/all', requireAdmin, async (req, res) => {
 
     if (req.query.employee_id) query = query.eq('assigned_to', req.query.employee_id);
     if (req.query.status) query = query.eq('status', req.query.status);
+
     const { data, error } = await query;
     if (error) throw error;
     res.json(data);
@@ -159,7 +163,6 @@ router.get('/all', requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Could not load tasks' });
   }
 });
-
 // ----------------------------- my tasks (everyone — only their own) -----------------------------
 router.get('/my', async (req, res) => {
   try {
