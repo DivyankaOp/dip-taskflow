@@ -227,11 +227,26 @@ async function api(path, { method = 'GET', body, isForm = false } = {}) {
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   if (!isForm && body) headers['Content-Type'] = 'application/json';
+  // const res = await fetch(`${API_BASE}${path}`, {
+  //   method, headers,
+  //   cache: 'no-store',
+  //   body: isForm ? body : (body ? JSON.stringify(body) : undefined)
+  // });
+  // if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
   const res = await fetch(`${API_BASE}${path}`, {
     method, headers,
     cache: 'no-store',
     body: isForm ? body : (body ? JSON.stringify(body) : undefined)
   });
+
+  // Sliding session: backend jab token expiry ke kareeb hota hai to naya
+  // token bhej deta hai — usko silently swap kar do
+  const newToken = res.headers.get('X-New-Token');
+  if (newToken) {
+    state.token = newToken;
+    localStorage.setItem('tf_token', newToken);
+  }
+
   if (res.status === 401) { logout(); throw new Error('Session expired, please log in again'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
