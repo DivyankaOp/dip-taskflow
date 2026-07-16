@@ -203,9 +203,14 @@ router.patch('/:id/start-verification', async (req, res) => {
   try {
     const { id } = req.params;
 
+    // const { data: existing, error: fetchErr } = await supabase
+    //   .from('tasks')
+    //   .select('id, verifier_id, verification_status, verification_started_by, verification_started_at')
+    //   .eq('id', id)
+    //   .maybeSingle();
     const { data: existing, error: fetchErr } = await supabase
       .from('tasks')
-      .select('id, verifier_id, verification_status, verification_started_by, verification_started_at')
+      .select('id, assigned_to, accepted_at')
       .eq('id', id)
       .maybeSingle();
     if (fetchErr) throw fetchErr;
@@ -339,14 +344,26 @@ router.patch('/:id/status', async (req, res) => {
       return res.status(403).json({ error: 'You can only update your own tasks' });
     }
 
-    const updates = { status };
+    // const updates = { status };
+    // if (status === 'Rejected') {
+    //   updates.status_note = `Rejected by ${req.user.full_name}${status_note ? `: ${status_note}` : ''}`;
+    //   updates.rejected_at = new Date().toISOString();
+    // } else if (status === 'Pending') {
+    //   updates.status_note = null;
+    // }
+const updates = { status };
     if (status === 'Rejected') {
       updates.status_note = `Rejected by ${req.user.full_name}${status_note ? `: ${status_note}` : ''}`;
       updates.rejected_at = new Date().toISOString();
     } else if (status === 'Pending') {
       updates.status_note = null;
+    } else if (status === 'In Progress') {
+      // Employee ne "Accept" dabaya. Pehli baar accept hone ka time record
+      // karo — agar pehle se accepted_at set hai (dobara accept, e.g.
+      // reopen -> accept cycle), usse overwrite mat karo.
+      updates.accepted_at = existing.accepted_at || new Date().toISOString();
     }
-
+    
     const { data, error } = await supabase
       .from('tasks')
       .update(updates)
