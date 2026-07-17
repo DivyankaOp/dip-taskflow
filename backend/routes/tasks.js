@@ -509,8 +509,28 @@ router.patch(
         .eq('id', id)
         .select(TASK_SELECT)
         .single();
-
+//17th july 
+      
+    //   if (error) throw error;
+    //   res.json(data);
+    // } catch (err) {
+    //   console.error('Send for verification error:', err.message);
       if (error) throw error;
+
+      const { data: verifierUser } = await supabase
+        .from('users')
+        .select('whatsapp_number, full_name')
+        .eq('id', verifier_id)
+        .maybeSingle();
+
+      if (verifierUser?.whatsapp_number) {
+        sendWhatsAppTemplate(verifierUser.whatsapp_number, 'task_verification_request', [
+          verifierUser.full_name,
+          data.description,
+          data.project?.name || '—'
+        ]).catch(() => {});
+      }
+
       res.json(data);
     } catch (err) {
       console.error('Send for verification error:', err.message);
