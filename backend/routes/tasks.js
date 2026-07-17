@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const supabase = require('../lib/supabaseClient');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-
+const { sendWhatsAppTemplate } = require('../lib/whatsapp');
 const router = express.Router();
 router.use(requireAuth);
 
@@ -131,7 +131,37 @@ if (!isMdoOffice && !project_id) {
         .select(TASK_SELECT)
         .single();
 
+    //   if (error) throw error;
+    //   res.status(201).json(data);
+    // } catch (err) {
+    //   console.error('Create task error:', err.message);
       if (error) throw error;
+
+      // Assignee ko WhatsApp par notification bhejo (best-effort — fail hone
+      // par bhi task creation fail nahi hona chahiye)
+      const { data: assigneeUser } = await supabase
+        .from('users')
+        .select('whatsapp_number, full_name')
+        .eq('id', assigned_to)
+        .maybeSingle();
+
+      // if (assigneeUser?.whatsapp_number) {
+      //   sendWhatsAppTemplate(assigneeUser.whatsapp_number, 'task_notification_v2', [
+      //     assigneeUser.full_name,
+      //     data.project?.name || '—',
+      //     target_date,
+      //     priority || 'Medium'
+      //   ]).catch(() => {});
+      // }
+if (assigneeUser?.whatsapp_number) {
+        sendWhatsAppTemplate(assigneeUser.whatsapp_number, 'task_notification_v2', [
+          assigneeUser.full_name,
+          description,
+          data.project?.name || '—',
+          target_date,
+          priority || 'Medium'
+        ]).catch(() => {});
+      }
       res.status(201).json(data);
     } catch (err) {
       console.error('Create task error:', err.message);
