@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../lib/supabaseClient');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { sendWhatsAppTemplate } = require('../lib/whatsapp');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -41,8 +42,29 @@ router.post('/', async (req, res) => {
       })
       .select(LEAVE_SELECT)
       .single();
-
+//17 july 
+  //   if (error) throw error;
+  //   res.status(201).json(data);
+  // } catch (err) {
+  //   console.error('Apply leave error:', err.message);
     if (error) throw error;
+
+    const { data: recipients } = await supabase
+      .from('users')
+      .select('whatsapp_number')
+      .in('username', ['chirag.s', 'kishan.k', 'aayushi.s']);
+
+    for (const r of (recipients || [])) {
+      if (r.whatsapp_number) {
+        sendWhatsAppTemplate(r.whatsapp_number, 'leave_application_notification', [
+          req.user.full_name,
+          from_date,
+          to_date,
+          reason.trim()
+        ]).catch(() => {});
+      }
+    }
+
     res.status(201).json(data);
   } catch (err) {
     console.error('Apply leave error:', err.message);
