@@ -667,13 +667,16 @@ router.patch('/:id/send-updation', async (req, res) => {
 router.patch('/:id/reschedule', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { target_date } = req.body || {};
+   // const { target_date } = req.body || {}; 17th july
+    const { target_date, reason } = req.body || {};
     if (!target_date) {
       return res.status(400).json({ error: 'Please pick a new target date' });
     }
-
+//17t july 
+    // const { data: existing, error: fetchErr } = await supabase
+    //   .from('tasks').select('id, reschedule_status').eq('id', id).maybeSingle();
     const { data: existing, error: fetchErr } = await supabase
-      .from('tasks').select('id, reschedule_status').eq('id', id).maybeSingle();
+      .from('tasks').select('id, reschedule_status, target_date').eq('id', id).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
 
@@ -695,7 +698,26 @@ router.patch('/:id/reschedule', requireAdmin, async (req, res) => {
       .select(TASK_SELECT)
       .single();
 
+  //   if (error) throw error;
+  //   res.json(data);
+  // } catch (err) {
+  //   console.error('Reschedule error:', err.message); 17th july
     if (error) throw error;
+
+    const { data: chirag } = await supabase
+      .from('users').select('whatsapp_number').eq('username', 'chirag.s').maybeSingle();
+
+    if (chirag?.whatsapp_number) {
+      sendWhatsAppTemplate(chirag.whatsapp_number, 'task_reschedule', [
+        data.id,
+        data.project?.name || '—',
+        req.user.full_name,
+        reason && reason.trim() ? reason.trim() : 'No reason given',
+        existing.target_date || '—',
+        target_date
+      ]).catch(() => {});
+    }
+
     res.json(data);
   } catch (err) {
     console.error('Reschedule error:', err.message);
