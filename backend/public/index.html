@@ -1234,9 +1234,17 @@
         <button class="modal-close" id="closeRescheduleModal">&times;</button>
       </div>
       <form id="rescheduleForm" class="modal-body">
+        <!-- <div class="field">
+          <label for="reschedule-date">New target date <span class="req">*</span></label>
+          <input id="reschedule-date" type="datetime-local" required />
+        </div> -->
         <div class="field">
           <label for="reschedule-date">New target date <span class="req">*</span></label>
           <input id="reschedule-date" type="datetime-local" required />
+        </div>
+        <div class="field">
+          <label for="reschedule-reason">Reason</label>
+          <textarea id="reschedule-reason" rows="2" placeholder="Why is this task being rescheduled?"></textarea>
         </div>
         <p id="rescheduleFormMsg" class="form-error" hidden></p>
         <div class="modal-actions">
