@@ -47,25 +47,37 @@ router.post('/', async (req, res) => {
   //   res.status(201).json(data);
   // } catch (err) {
   //   console.error('Apply leave error:', err.message);
-    if (error) throw error;
+if (error) throw error;
 
-    const { data: recipients } = await supabase
-      .from('users')
-      .select('whatsapp_number')
-      .in('username', ['chirag.s', 'kishan.k', 'aayushi.s']);
+    // Notify: hamesha Chirag Sir (top head) + is employee ka apna
+    // reporting head (agar set hai) — duplicate na ho isliye Set use kiya
+    const numbers = new Set();
 
-    for (const r of (recipients || [])) {
-      if (r.whatsapp_number) {
-        sendWhatsAppTemplate(r.whatsapp_number, 'leave_application_notification', [
-          req.user.full_name,
-          from_date,
-          to_date,
-          reason.trim()
-        ]).catch(() => {});
-      }
+    const { data: chirag } = await supabase
+      .from('users').select('whatsapp_number').eq('username', 'chirag.s').maybeSingle();
+    if (chirag?.whatsapp_number) numbers.add(chirag.whatsapp_number);
+
+    const { data: applicant } = await supabase
+      .from('users').select('reporting_head_id').eq('id', req.user.id).maybeSingle();
+
+    if (applicant?.reporting_head_id) {
+      const { data: head } = await supabase
+        .from('users').select('whatsapp_number').eq('id', applicant.reporting_head_id).maybeSingle();
+      if (head?.whatsapp_number) numbers.add(head.whatsapp_number);
+    }
+
+    for (const num of numbers) {
+      sendWhatsAppTemplate(num, 'leave_application_notification', [
+        req.user.full_name,
+        from_date,
+        to_date,
+        reason.trim()
+      ]).catch(() => {});
     }
 
     res.status(201).json(data);
+
+    //above 17th july chg
   } catch (err) {
     console.error('Apply leave error:', err.message);
     res.status(500).json({ error: err.message || 'Could not submit leave request' });
