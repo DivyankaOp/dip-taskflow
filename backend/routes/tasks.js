@@ -86,10 +86,21 @@ router.post(
         rescheduling_possible
       } = req.body;
 
-      if (!department_id || !assigned_to || !project_id || !task_type_id || !description || !target_date) {
-        return res.status(400).json({ error: 'Please fill in all required fields' });
-      }
+      // if (!department_id || !assigned_to || !project_id || !task_type_id || !description || !target_date) {
+      //   return res.status(400).json({ error: 'Please fill in all required fields' });
+      // }
+if (!department_id || !assigned_to || !task_type_id || !description || !target_date) {
+  return res.status(400).json({ error: 'Please fill in all required fields' });
+}
 
+// Project sirf non-MDO-OFFICE tasks ke liye compulsory hai
+const { data: dept } = await supabase.from('departments').select('name').eq('id', department_id).maybeSingle();
+const isMdoOffice = dept?.name === 'MDO OFFICE';
+if (!isMdoOffice && !project_id) {
+  return res.status(400).json({ error: 'Please select a project' });
+}
+      //above chg are 17th july
+      
       const attachmentFile = req.files?.attachment?.[0];
       const voiceNoteFile = req.files?.voice_note?.[0];
 
