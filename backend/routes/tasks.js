@@ -115,7 +115,9 @@ if (!isMdoOffice && !project_id) {
           department_id,
           assigned_to,
           assigned_by: req.user.id,
-          project_id,
+         // project_id,
+          //these r 17th july
+          project_id: project_id || null,
           task_type_id,
           description,
           hours_to_complete: hours_to_complete ? Number(hours_to_complete) : null,
