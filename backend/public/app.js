@@ -772,6 +772,15 @@ async function loadMasterData() {
     fillRecurringDropdowns();
   } catch (err) { showToast(err.message, 'error'); }
 }
+// 17 july 2026
+els.fDepartment.addEventListener('change', () => {
+  const dept = state.master.departments.find(d => d.id === els.fDepartment.value);
+  const isMdoOffice = dept && dept.name === 'MDO OFFICE';
+  els.fProject.required = !isMdoOffice;
+  const reqStar = document.getElementById('f-project-req');
+  if (reqStar) reqStar.style.display = isMdoOffice ? 'none' : 'inline';
+});
+
 
 async function refreshEmployeeDropdowns() {
   try {
