@@ -169,10 +169,17 @@ const els = {
   // Verify modal file input
   verifyFiles: document.getElementById('verify-files'),
 
-  rescheduleModal: document.getElementById('rescheduleModal'),
+  // rescheduleModal: document.getElementById('rescheduleModal'),
+  // rescheduleForm: document.getElementById('rescheduleForm'),
+  // rescheduleFormMsg: document.getElementById('rescheduleFormMsg'),
+  // rescheduleDate: document.getElementById('reschedule-date'),
+rescheduleModal: document.getElementById('rescheduleModal'),
   rescheduleForm: document.getElementById('rescheduleForm'),
   rescheduleFormMsg: document.getElementById('rescheduleFormMsg'),
   rescheduleDate: document.getElementById('reschedule-date'),
+  rescheduleReason: document.getElementById('reschedule-reason'),
+
+  //17th july above code chg
   closeRescheduleModal: document.getElementById('closeRescheduleModal'),
   cancelRescheduleModal: document.getElementById('cancelRescheduleModal'),
   reschedRequestModal: document.getElementById('reschedRequestModal'),
@@ -2339,23 +2346,44 @@ function renderVerificationsTable(tbody, tasks) {
 
 // ─── Reschedule ───────────────────────────────────────────────────────────────
 function openRescheduleModal(taskId, currentTargetDate) {
-  state.pendingTaskId = taskId; els.rescheduleFormMsg.hidden = true;
+//   state.pendingTaskId = taskId; els.rescheduleFormMsg.hidden = true;
+//   els.rescheduleDate.value = toDatetimeLocalValue(currentTargetDate);
+//   els.rescheduleModal.hidden = false;
+// }
+// els.closeRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
+// els.cancelRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
+// els.rescheduleForm.addEventListener('submit', async (e) => {
+//   e.preventDefault(); els.rescheduleFormMsg.hidden = true;
+//   try {
+//     await api(`/tasks/${state.pendingTaskId}/reschedule`, {
+//       method: 'PATCH', body: { target_date: els.rescheduleDate.value }
+//     });
+//     showToast('Task rescheduled ✅', 'success');
+//     els.rescheduleModal.hidden = true; reloadCurrentTaskView(); refreshNavBadges();
+//   } catch (err) { els.rescheduleFormMsg.textContent = err.message; els.rescheduleFormMsg.hidden = false; }
+// });
+
+
+state.pendingTaskId = taskId; els.rescheduleFormMsg.hidden = true;
   els.rescheduleDate.value = toDatetimeLocalValue(currentTargetDate);
+  els.rescheduleReason.value = '';
   els.rescheduleModal.hidden = false;
-}
+};
 els.closeRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
 els.cancelRescheduleModal.addEventListener('click', () => { els.rescheduleModal.hidden = true; });
 els.rescheduleForm.addEventListener('submit', async (e) => {
   e.preventDefault(); els.rescheduleFormMsg.hidden = true;
   try {
     await api(`/tasks/${state.pendingTaskId}/reschedule`, {
-      method: 'PATCH', body: { target_date: els.rescheduleDate.value }
+      method: 'PATCH', body: { target_date: els.rescheduleDate.value, reason: els.rescheduleReason.value }
     });
     showToast('Task rescheduled ✅', 'success');
-    els.rescheduleModal.hidden = true; reloadCurrentTaskView(); refreshNavBadges();
+    els.rescheduleModal.hidden = true; els.rescheduleReason.value = ''; reloadCurrentTaskView(); refreshNavBadges();
   } catch (err) { els.rescheduleFormMsg.textContent = err.message; els.rescheduleFormMsg.hidden = false; }
 });
 
+
+  //17th july chg above
 // ─── Reschedule request (employee — goes to admin for approval) ───────────────
 function openReschedRequestModal(taskId) {
   state.pendingTaskId = taskId; els.reschedRequestFormMsg.hidden = true;
