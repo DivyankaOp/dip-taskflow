@@ -708,8 +708,16 @@ router.patch('/:id/reschedule', requireAdmin, async (req, res) => {
       .from('users').select('whatsapp_number').eq('username', 'chirag.s').maybeSingle();
 
     if (chirag?.whatsapp_number) {
+      // sendWhatsAppTemplate(chirag.whatsapp_number, 'task_reschedule', [
+      //   data.id,
+      //   data.project?.name || '—',
+      //   req.user.full_name,
+      //   reason && reason.trim() ? reason.trim() : 'No reason given',
+      //   existing.target_date || '—',
+      //   target_date
+      // ]).catch(() => {}); 17th july  chg
       sendWhatsAppTemplate(chirag.whatsapp_number, 'task_reschedule', [
-        data.id,
+        data.description,
         data.project?.name || '—',
         req.user.full_name,
         reason && reason.trim() ? reason.trim() : 'No reason given',
